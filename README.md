@@ -19,11 +19,11 @@ def beam_factory(num_particles:int) -> cheetah.ParticleBeam:
 Pass the factory function and your lattice json to the `CheetahGym` constructor and start the server:
 
 ```
-gym = CheetahGym("my_cheetah_lattice.json", beam_factory)
-gym.reset()
+vis = CheetahVis("my_cheetah_lattice.json", beam_factory)
+vis.reset()
 
 # Create the background simulation task and web host
-simulation_task = await asyncio.create_task(gym.start_server())
+simulation_task = await asyncio.create_task(vis.start_server())
 
 await asyncio.sleep(1)
 print("OK")
