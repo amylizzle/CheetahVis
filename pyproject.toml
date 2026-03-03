@@ -1,0 +1,13 @@
+[project]
+name = "CheetahVis"
+version = "0.0.1"
+dependencies = [
+    "cheetah-accelerator",
+    "trimesh",
+    "dotenv",
+    "websockets",
+    "quart",
+    "requests",
+    "tqdm",
+]
+

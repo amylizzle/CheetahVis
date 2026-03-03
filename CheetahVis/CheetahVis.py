@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Callable
 
 import numpy as np
+from quart import Quart, Response, send_from_directory
 import torch
 import trimesh
 import websockets
@@ -16,6 +17,7 @@ import cheetah
 from dotenv import load_dotenv
 
 env_path = Path(__file__).resolve().parent / ".env"  
+serve_path = Path(__file__).resolve().parent / "dist"
 
 # Load the .env file
 load_dotenv(dotenv_path=env_path)
@@ -97,15 +99,13 @@ class CheetahVis():
             lattice_path
         )
 
-        # Ensures the necessary npm dependencies are installed
-        self._setup()
 
     async def start_server(self):
         # Start the JavaScript web application (dev or prod mode)
         
         print(f"Server hosted at http://{self.http_host}:{self.http_port}")
         # Start the websocket and return the coroutine
-        return asyncio.gather(self._start_websocket(), self._start_web_application())
+        return await asyncio.gather(self._start_websocket(), self._start_web_application())
 
     def reset(
         self, *, seed: Optional[int] = None, options: Optional[Dict] = None
@@ -193,62 +193,21 @@ class CheetahVis():
         # before sending new data
         await asyncio.sleep(1.25)
 
-    def close(self):
+    async def close(self):
         """
         Close the wrapper and terminate the web application process.
         """
         # Terminate the web application process if it exists
         if self.web_process:
-            self.web_process.kill()
-            self.web_process.wait()
-            print("Terminated JavaScript web application process.")
+            print("Shutting down web server...")
+            self.web_process.cancel()
+            try:
+                await self.web_process
+            except asyncio.CancelledError:
+                print("Server stopped gracefully.")
         if self.server:
             self.server.close()  # This will stop the WebSocket server and trigger cleanup
             print("Closed WebSocket server.")
-
-    def _setup(self):
-        """
-        Automates the setup process by running npm install to install dependencies.
-        This should be run once to ensure the JavaScript dependencies are installed.
-        """
-        try:
-            # Path to the node_modules directory
-            node_modules_path = os.path.join(self.base_path, "node_modules")
-
-            # Check if package.json exists to confirm we are in the correct directory
-            package_json_path = os.path.join(self.base_path, "package.json")
-            if not os.path.exists(package_json_path):
-                raise FileNotFoundError(
-                    f"{package_json_path} not found."
-                    f" Make sure you are in the correct project directory."
-                )
-
-            # Check if node_modules exists and is not empty
-            if os.path.exists(node_modules_path) and os.listdir(node_modules_path):
-                logger.info("Dependencies are already installed. Skipping npm install.")
-            else:
-                logger.info("Running npm install...")
-                result = subprocess.run(
-                    ["npm", "install"],
-                    cwd=self.base_path,  # Run in directory with package.json
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    shell=(
-                        True if sys.platform == "win32" else None
-                    ),  # Only use shell=True on Windows
-                )
-
-                # Log the output for debugging purposes
-                if result.returncode == 0:
-                    logger.info("npm install completed successfully.")
-                else:
-                    logger.error(f"npm install failed with error: {result.stderr}")
-                    raise RuntimeError(f"npm install failed: {result.stderr}")
-
-        except Exception as e:
-            logger.error(f"Error during setup: {e}")
-            raise
 
     def _simulate(self) -> None:
         """
@@ -331,69 +290,22 @@ class CheetahVis():
             input_transform = input_transform @ element_output_transform
 
     async def _start_web_application(self):
-        """
-        Start the JavaScript web application (Vite development server)
-        in a background thread.
-        """
+        app = Quart('CheetahVisWebApp')
 
-        # Give the server a moment to start
-        logger.debug(
-            f"JavaScript web application setup initiated on "
-            f"http://{self.http_host}:{self.http_port}"
-        )     
+        @app.route('/wsport')
+        async def serve_wsport():
+            return Response(str(self.ws_port), mimetype='text/plain')
 
-        try:
-            # Determine the mode and load the appropriate .env file
-            node_env = os.getenv("NODE_ENV", "production")
-            server_env = os.environ.copy()
-            server_env['VITE_HTTP_PORT'] = str(self.http_port)
-            server_env['VITE_HTTP_HOST'] = self.http_host
-            server_env['VITE_APP_WEBSOCKET_PORT'] = str(self.ws_port)
+        @app.route('/')
+        async def index():
+            return await send_from_directory(serve_path, 'index.html')
 
-            logger.debug(f"Running in mode: {node_env}")
-
-            if node_env == "development":
-                # Development mode: Start Vite dev server
-                # Start Vite development server
-                cmd = [
-                    "npx",
-                    "vite",
-                    "--host",
-                    self.http_host,
-                    "--port",
-                    str(self.http_port),
-                ]
-                logger.debug(
-                    f"Starting Vite dev server"
-                    f" on http://{self.http_host}:{self.http_port}"
-                )
-            else:
-                # Production mode: Start Express server (server.js)
-                dist_path = self.base_path / "dist"
-                if not dist_path.exists():
-                    raise FileNotFoundError(
-                        f"Pre-built dist folder not found at {dist_path}. Run `npm run build` first."
-                    )
-                cmd = ["node", "server.js"]
-                logger.debug(
-                    f"Starting Express server (server.js)"
-                    f" on http://{self.http_host}:{self.http_port}"
-                )
-
-            self.web_process = await asyncio.subprocess.create_subprocess_shell(
-                cmd=" ".join(cmd),
-                cwd=self.base_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                # Pass environment variables (e.g., PORT from .env)
-                env=server_env,
-            )
-
-            await self.web_process.wait()
-
-        except Exception as e:
-            logger.error(f"Failed to start web application: {e}")
-            raise(e)
+        @app.route('/<path:path>')
+        async def serve_files(path):
+            return await send_from_directory(serve_path, path)
+        
+        self.web_process = asyncio.create_task(app.run_task(host=self.http_host, port=self.http_port))
+        return self.web_process
 
     async def _start_websocket(self):
         """Run the WebSocket server."""
@@ -430,7 +342,7 @@ class CheetahVis():
 
                         if self.stop_simulation:
                             print("Stop signal recieved, shutting down...")
-                            self.close()
+                            await self.close()
                             break
 
                         #for key in controls
@@ -448,7 +360,7 @@ class CheetahVis():
 
                         if truncated:  # Stop the simulation if truncated is True
                             print("Truncated flag is True, stopping simulation...")
-                            self.close()
+                            await self.close()
                             break
                 except json.JSONDecodeError:
                     logger.error("Error: Received invalid JSON data.")
