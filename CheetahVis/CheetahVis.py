@@ -290,6 +290,12 @@ class CheetahVis():
             input_transform = input_transform @ element_output_transform
 
     async def _start_web_application(self):
+        if os.getenv("NODE_ENV") == "development":
+            print("Running in development mode, make sure to run npm run start-js in the CheetahVis directory to start the Vite dev server.")
+            # In development mode, we assume the developer is running the Vite dev server separately
+            # and we just need to serve the WebSocket port.
+            return
+            
         app = Quart('CheetahVisWebApp')
 
         @app.route('/wsport')
