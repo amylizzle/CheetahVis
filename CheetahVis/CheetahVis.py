@@ -407,8 +407,7 @@ class CheetahVis():
 
     async def safe_send(self, client, message):
         try:
-            async with asyncio.timeout(2.5):
-                await client.send(json.dumps(message))
+            await client.send(json.dumps(message))
         except asyncio.TimeoutError:
             logger.warning("WebSocket send timed out.")
         except websockets.ConnectionClosed:
