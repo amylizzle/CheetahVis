@@ -1,9 +1,8 @@
 import asyncio
+import base64
 import json
 import logging
 import os
-import subprocess
-import sys
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Callable
@@ -13,6 +12,7 @@ from quart import Quart, Response, send_from_directory
 import torch
 import trimesh
 import websockets
+from websockets.extensions import permessage_deflate
 import cheetah
 from dotenv import load_dotenv
 
@@ -83,13 +83,11 @@ class CheetahVis():
 
         # WebSocket management attributes
         self.clients = set()
+        self._lock = asyncio.Lock() # clients lock
         self.connected = False
         self.server = None
 
         self.stop_simulation = False
-
-        # Start the WebSocket server in a separate thread
-        self._lock = asyncio.Lock()
 
         # Initialize state
         self.incoming_particle_beam = None
@@ -101,10 +99,10 @@ class CheetahVis():
 
 
     async def start_server(self):
-        # Start the JavaScript web application (dev or prod mode)
-        
-        print(f"Server hosted at http://{self.http_host}:{self.http_port}")
+        # Get the current event loop so external calls can update cheetah state and trigger renders
+        self.asyncio_loop = asyncio.get_running_loop()
         # Start the websocket and return the coroutine
+        # Start the JavaScript web application (dev or prod mode)
         return await asyncio.gather(self._start_websocket(), self._start_web_application())
 
     def reset(
@@ -266,20 +264,23 @@ class CheetahVis():
             R = element_output_transform.copy()
             R[:3, 3] = 0
 
-            momenta = torch.stack([px, py], dim=1)
             positions = torch.stack([x, y, z, w], dim=1) 
 
             correction = (origin @ input_transform.T)
             positions = positions @ R.T + correction
+
+            # Convert to float32 (4 bytes) and get raw bytes
+            pos_bytes = positions[:, :3].numpy().astype(np.float32).tobytes()
+            # Encode to base64 string
+            pos_b64 = base64.b64encode(pos_bytes).decode('utf-8')
 
             # Store segment data
             self.data["segments"].append(
                 {
                     "segment_name": element.name,
                     "segment_type": element.__class__.__name__,
-                    "particle_positions": positions[:,:3].tolist(),
+                    "particle_positions": pos_b64,
                     "mean_particle_position": positions[:,:3].mean(dim=0).tolist(),
-                    "momenta": momenta.tolist(),
                     "element_transform": input_transform.T.flatten().tolist(),
                     "element_position": pathlength,
                     "mesh_position": correction.tolist()
@@ -320,6 +321,11 @@ class CheetahVis():
             self._handle_client,
             host=self.ws_host,
             port=self.ws_port,
+            extensions=[
+                permessage_deflate.ServerPerMessageDeflateFactory(
+                    server_max_window_bits=15,  # Use maximum window size for better compression
+                ),
+            ],
         )
         logger.debug(f"WebSocket server running on ws://{self.ws_host}:{self.ws_port}")
         await self.server.wait_closed()
@@ -410,3 +416,6 @@ class CheetahVis():
         except asyncio.CancelledError:
             logger.debug("WebSocket task was cancelled.")
             raise
+        except Exception as e:
+            print(f"Error sending message to client {e}")
+            raise e

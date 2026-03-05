@@ -67,9 +67,6 @@ class SceneManager {
         // Particle System Initialization
         this.createParticles();
 
-        // Start Animation Loop
-        this.startAnimation();
-
         // WebSocket Setup (only after everything else is ready)
         this.setupWebSocket();
     }
@@ -472,8 +469,8 @@ class SceneManager {
             this.camera.position.lerpVectors(new THREE.Vector3(-0.25 + currentSegment.mesh_position[0], 0.5 + currentSegment.mesh_position[1], -0.75 + currentSegment.mesh_position[2]), new THREE.Vector3(-0.25 + nextSegment.mesh_position[0], 0.5 + nextSegment.mesh_position[1], -0.75 + nextSegment.mesh_position[2]), segmentProgress)
             // Update each particle
             this.particles.forEach((particle, i) => {
-                const startPos = new THREE.Vector3(...currentSegment.particle_positions[i]);
-                const endPos = new THREE.Vector3(...nextSegment.particle_positions[i]);
+                const startPos = new THREE.Vector3(...currentSegment.getParticlePosition(i));
+                const endPos = new THREE.Vector3(...nextSegment.getParticlePosition(i));
 
                 if(this.scaleBeamSpread > 1.0 || this.scaleBeamPosition > 0.0){
                     const currentMeanPos = new THREE.Vector3(...currentSegment.mean_particle_position);
@@ -491,7 +488,6 @@ class SceneManager {
 
                 // Interpolate position based on constant speed progress
                 particle.mesh.position.lerpVectors(startPos, endPos, segmentProgress);
-                particle.mesh.material.color.setRGB(currentSegment.momenta[i,0]*10000, 1, currentSegment.momenta[i,1]*10000)
                 // Keep particles fully visible across all segments
                 particle.mesh.material.opacity = 1.0;
                 particle.mesh.visible = true;
@@ -635,12 +631,29 @@ class SceneManager {
             this.isSceneReady = true;
             console.log(`Scene ready! Total path length: ${this.totalPathLength}`)
         }
-
+        data.segments.forEach(seg => {
+            // This is vastly faster than parsing a million string numbers
+            const blob = atob(seg.particle_positions);
+            const buf = new Uint8Array(blob.length);
+            for (let i = 0; i < blob.length; i++) buf[i] = blob.charCodeAt(i);
+            
+            const floatArray = new Float32Array(buf.buffer);
+            Object.defineProperty(seg, 'getParticlePosition', {
+                value: (i) => ([
+                    floatArray[i * 3],
+                    floatArray[i * 3 + 1],
+                    floatArray[i * 3 + 2]
+                ]),
+            });
+        });
         // Store current data
         this.currentData = data;
 
+        // Start Animation Loop
+        this.startAnimation();
         this.resetAnimation();
     }
+
 
     resetAnimation(){
         // Reset progress state when new data arrives
@@ -656,7 +669,7 @@ class SceneManager {
         const startSegment = this.currentData.segments[0];
 
         this.particles.forEach((particle, i) => {
-            particle.mesh.position.set(...startSegment.particle_positions[i]);
+            particle.mesh.position.set(...startSegment.getParticlePosition(i));
         });
     
         this.camera.position.set(-0.25, 0.5, -0.75);
