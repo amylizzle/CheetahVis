@@ -59,16 +59,16 @@ class SceneManager {
         this.setupLighting();
         this.createReflectivePlane();
         this.createControlPanel();
-        this.loadModels();
+        this.loadModels().then(() => {
+            // Event Listeners
+            this.setupEventListeners();
 
-        // Event Listeners
-        this.setupEventListeners();
+            // Particle System Initialization
+            this.createParticles();
 
-        // Particle System Initialization
-        this.createParticles();
-
-        // WebSocket Setup (only after everything else is ready)
-        this.setupWebSocket();
+            // WebSocket Setup (only after everything else is ready)
+            this.setupWebSocket();
+        });
     }
 
     // Scene Initialization
@@ -423,17 +423,14 @@ class SceneManager {
         }
 
         for(let elementName in this.elementModels) {
-            loader.load(
-                `/models/${elementName}.glb`, 
-                (gltf) => {    
+            this.elementModels[elementName] = loader.loadAsync(`/models/${elementName}.glb`).then(
+                (gltf) => {
                     console.log(`${elementName} model loaded`);
-                    gltf.scene.scale.set(0.1,0.1,0.1)
+                    gltf.scene.scale.set(0.1,0.1,0.1);
                     this.elementModels[elementName] = gltf.scene;
-                },
-                undefined,
-                (error) => console.error(`Error loading ${elementName} model:`, error)
-            );
+                })
         }
+        return Promise.all(Object.values(this.elementModels))
     }
 
     // Rendering & Animation
