@@ -2,7 +2,16 @@
 
 This repository contains a Python-based simulation control system and a JavaScript-based 3D visualization application for a particle beam lattice. Follow the instructions below to set up the environment and dependencies.
 
+
+
+https://github.com/user-attachments/assets/7a09645e-5a25-49cb-b8a8-8bc9e44e734b
+
+
+
 ## Prerequisites
+
+
+
 - Python 3.10+
 
 ## Install
