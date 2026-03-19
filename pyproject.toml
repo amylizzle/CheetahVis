@@ -1,6 +1,7 @@
 [project]
 name = "CheetahVis"
 version = "0.0.1"
+include-package-data = true
 dependencies = [
     "cheetah-accelerator",
     "trimesh",
@@ -10,9 +11,3 @@ dependencies = [
     "requests",
     "tqdm",
 ]
-
-[tool.setuptools.package-data]
-"CheetahVis.css" = ["*"]
-"CheetahVis.dist" = ["*"]
-"CheetahVis.dist.assets" = ["*"]
-"CheetahVis.dist.models" = ["*"]
