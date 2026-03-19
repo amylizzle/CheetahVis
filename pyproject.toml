@@ -11,3 +11,8 @@ dependencies = [
     "tqdm",
 ]
 
+[tool.setuptools.package-data]
+"CheetahVis.css" = ["*"]
+"CheetahVis.dist" = ["*"]
+"CheetahVis.dist.assets" = ["*"]
+"CheetahVis.dist.models" = ["*"]
