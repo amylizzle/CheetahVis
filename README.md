@@ -15,7 +15,7 @@ https://github.com/user-attachments/assets/7a09645e-5a25-49cb-b8a8-8bc9e44e734b
 - Python 3.10+
 
 ## Install
-`pip install -e .`
+`pip install CheetahVis@git+https://github.com/amylizzle/CheetahVis.git`
 
 ## Running
 Define a beam factory function that returns a new instance of a `cheetah.ParticleBeam`
