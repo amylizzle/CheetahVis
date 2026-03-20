@@ -10,3 +10,10 @@ dependencies = [
     "requests",
     "tqdm",
 ]
+[tool.setuptools]
+# This tells setuptools to look at your MANIFEST.in
+include-package-data = true
+
+[tool.setuptools.package-data]
+# This explicitly maps the files if MANIFEST.in is being stubborn
+"CheetahVis" = ["dist/**/*", ".env"]

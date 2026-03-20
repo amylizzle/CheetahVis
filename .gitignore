@@ -3,3 +3,6 @@
 **/__pycache__
 snapshots
 .vscode
+build/
+/dist/
+*.egg-info/
