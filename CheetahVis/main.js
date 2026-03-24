@@ -219,15 +219,15 @@ class SceneManager {
         plotWindow.style.zIndex = '1000';
 
         // Create the container for the plot
-        this.plotContainer = document.createElement('div');
-        this.plotContainer.id = plot_id;
-        this.plotContainer.style.width = '100%';
-        this.plotContainer.style.height = '100%';
-        this.plotContainer.style.minHeight = '250px'; 
-        this.plotContainer.style.overflow = 'auto';
+        const plotContainer = document.createElement('div');
+        plotContainer.id = plot_id;
+        plotContainer.style.width = '100%';
+        plotContainer.style.height = '100%';
+        plotContainer.style.minHeight = '250px'; 
+        plotContainer.style.overflow = 'auto';
 
         // Add the container to the floating window
-        plotWindow.appendChild(this.plotContainer);
+        plotWindow.appendChild(plotContainer);
         document.body.appendChild(plotWindow);
 
         // Enable dragging functionality
@@ -261,13 +261,21 @@ class SceneManager {
             plotWindow.style.cursor = 'default';
         });
 
-        return this.plotContainer;
+        return plotContainer;
     }
 
-    updatePlots(data = {}) {
-        var graphDiv = document.getElementById('xpx-plot');
-        if(!graphDiv){
-            graphDiv = this.createPlotWindow('xpx-plot');
+    updatePlots(data_xpx = {}, data_ypy = {}, data_zpz = {}) {
+        var xpxDiv = document.getElementById('xpx-plot');
+        if(!xpxDiv){
+            xpxDiv = this.createPlotWindow('xpx-plot');
+        }
+        var ypyDiv = document.getElementById('ypy-plot');
+        if(!ypyDiv){
+            ypyDiv = this.createPlotWindow('ypy-plot');
+        }
+        var zpzDiv = document.getElementById('zpz-plot');
+        if(!zpzDiv){
+            zpzDiv = this.createPlotWindow('zpz-plot');
         }
 
         var layout = {
@@ -297,7 +305,12 @@ class SceneManager {
             plot_bgcolor: 'black'    // Keep graph area transparen
         };
 
-        Plotly.react(graphDiv, [data], layout); 
+        Plotly.react(xpxDiv, [data_xpx], layout); 
+        layout.title.text = "y/py"
+        Plotly.react(xpxDiv, [data_ypy], layout); 
+        layout.title.text = "z/pz"
+        Plotly.react(xpxDiv, [data_zpz], layout); 
+        
     }
 
     // Create control panel UI with sliders and reset button
@@ -566,13 +579,14 @@ class SceneManager {
             // this.camera.position =  + currentSegment.mesh_position + (nextSegment.mesh_position - currentSegment.mesh_position) * segmentProgress;
             this.camera.position.lerpVectors(new THREE.Vector3(-0.25 + currentSegment.mesh_position[0], 0.5 + currentSegment.mesh_position[1], -0.75 + currentSegment.mesh_position[2]), new THREE.Vector3(-0.25 + nextSegment.mesh_position[0], 0.5 + nextSegment.mesh_position[1], -0.75 + nextSegment.mesh_position[2]), segmentProgress)
             // Update each particle
-            var data_x = [];
-            var data_y = [];
+            var data_x = { mode: 'markers', x:[],y:[]};
+            var data_y = { mode: 'markers', x:[],y:[]};
+            var data_z = { mode: 'markers', x:[],y:[]};
             this.particles.forEach((particle, i) => {
-                const startPos = new THREE.Vector3(...currentSegment.getParticlePosition(i));
-                const endPos = new THREE.Vector3(...nextSegment.getParticlePosition(i));
-                const startMom = new THREE.Vector3(...currentSegment.getParticleMomentum(i));
-                const endMom = new THREE.Vector3(...nextSegment.getParticleMomentum(i));
+                const startPos = currentSegment.getParticlePosition(i);
+                const endPos = nextSegment.getParticlePosition(i);
+                const startMom = currentSegment.getParticleMomentum(i);
+                const endMom = nextSegment.getParticleMomentum(i);
 
                 if(this.scaleBeamSpread > 1.0 || this.scaleBeamPosition > 0.0){
                     const currentMeanPos = new THREE.Vector3(...currentSegment.mean_particle_position);
@@ -591,13 +605,17 @@ class SceneManager {
                 // Interpolate position based on constant speed progress
                 particle.mesh.position.lerpVectors(startPos, endPos, segmentProgress);
                 startMom.lerp(endMom, segmentProgress);
-                data_x.push(particle.mesh.position.x);
-                data_y.push(startMom.x); 
+                data_x.x.push(particle.mesh.position.x);
+                data_x.y.push(startMom.x); 
+                data_y.x.push(particle.mesh.position.y);
+                data_y.y.push(startMom.y); 
+                data_z.x.push(particle.mesh.position.z);
+                data_z.y.push(startMom.z); 
                 // Keep particles fully visible across all segments
                 particle.mesh.material.opacity = 1.0;
                 particle.mesh.visible = true;
             });
-            this.updatePlots({ x: data_x, y: data_y,  mode: 'markers'}  );
+            this.updatePlots(data_x, data_y, data_z);
             // restart animation when we reach 100% of total progress
             if (distanceTraveled >= this.totalPathLength*1.1) { //hold for a beat before resetting to allow particles to be visible at the end of the path
                 this.resetAnimation();
@@ -749,19 +767,19 @@ class SceneManager {
             const momFloatArray = new Float32Array(mbuf.buffer);
 
             Object.defineProperty(seg, 'getParticlePosition', {
-                value: (i) => ([
+                value: (i) => (new THREE.Vector3(
                     posFloatArray[i * 3],
                     posFloatArray[i * 3 + 1],
                     posFloatArray[i * 3 + 2]
-                ]),
+                )),
             });
 
             Object.defineProperty(seg, 'getParticleMomentum', {
-                value: (i) => ([
+                value: (i) => (new THREE.Vector3(
                     momFloatArray[i * 3],
                     momFloatArray[i * 3 + 1],
                     momFloatArray[i * 3 + 2]
-                ]),
+                )),
             });
         });
         // Store current data
