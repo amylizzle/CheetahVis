@@ -234,15 +234,16 @@ class CheetahVis():
             references.append(outgoing_beam)
 
             # Extract particle positions
-            x = -outgoing_beam.particles[:, 0]  # Column 0
+            x = -outgoing_beam.particles[:, 0] 
             px = outgoing_beam.particles[:, 1]
-            y = outgoing_beam.particles[:, 2]  # Column 2
+            y =  outgoing_beam.particles[:, 2]  
             py = outgoing_beam.particles[:, 3]
-            z = -outgoing_beam.particles[:, 4]  # Column 4
+            z = -outgoing_beam.particles[:, 4]  
+            pz = outgoing_beam.particles[:, 5]
             w = torch.zeros_like(z)
 
             # Note: In Cheetah, the coordinates of the particles are defined
-            # by a 7-dimensional vector: x = (x, p_x, y, p_y, 𝜏, 1),
+            # by a 7-dimensional vector: x = (x, p_x, y, p_y, 𝜏, 𝛿, 1),
             # where 𝜏 = t - t_0 represents the time offset of a particle
             # relative to the reference particle.
             #
@@ -265,14 +266,15 @@ class CheetahVis():
             R[:3, 3] = 0
 
             positions = torch.stack([x, y, z, w], dim=1) 
+            momenta = torch.stack([px, py, pz], dim=1)
 
             correction = (origin @ input_transform.T)
             positions = positions @ R.T + correction
 
             # Convert to float32 (4 bytes) and get raw bytes
-            pos_bytes = positions[:, :3].numpy().astype(np.float32).tobytes()
-            # Encode to base64 string
-            pos_b64 = base64.b64encode(pos_bytes).decode('utf-8')
+            # then encode to base64 string
+            pos_b64 = base64.b64encode(positions[:, :3].numpy().astype(np.float32).tobytes()).decode('utf-8')
+            mom_b64 = base64.b64encode(momenta.numpy().astype(np.float32).tobytes()).decode('utf-8')
 
             # Store segment data
             self.data["segments"].append(
@@ -280,6 +282,7 @@ class CheetahVis():
                     "segment_name": element.name,
                     "segment_type": element.__class__.__name__,
                     "particle_positions": pos_b64,
+                    "particle_momenta": mom_b64,
                     "mean_particle_position": positions[:,:3].mean(dim=0).tolist(),
                     "element_transform": input_transform.T.flatten().tolist(),
                     "element_position": pathlength,

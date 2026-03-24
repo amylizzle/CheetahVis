@@ -15,6 +15,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
+// plotly for plotting
+import * as Plotly from 'plotly.js-dist';
 
 class SceneManager {
     constructor(containerId) {
@@ -59,6 +61,7 @@ class SceneManager {
         this.setupLighting();
         this.createReflectivePlane();
         this.createControlPanel();
+        this.updatePlots()
         this.loadModels().then(() => {
             // Event Listeners
             this.setupEventListeners();
@@ -197,6 +200,104 @@ class SceneManager {
         groundMirror.position.y = -1.4;
         groundMirror.name = "Reflector";
         this.scene.add(groundMirror);
+    }
+
+    createPlotWindow(plot_id = "plotwindow") {
+        // Create the container div for the floating window
+        const plotWindow = document.createElement('div');
+        plotWindow.style.position = 'fixed';
+        plotWindow.style.top = '10px';
+        plotWindow.style.right = '10px';
+        plotWindow.style.width = '300px'; 
+        plotWindow.style.height = '210px';
+        plotWindow.style.backgroundColor = 'white';
+        plotWindow.style.border = '2px solid black';
+        plotWindow.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';
+        plotWindow.style.padding = '10px';
+        plotWindow.style.border = 'none'; 
+        plotWindow.style.backgroundColor = 'black'; 
+        plotWindow.style.zIndex = '1000';
+
+        // Create the container for the plot
+        this.plotContainer = document.createElement('div');
+        this.plotContainer.id = plot_id;
+        this.plotContainer.style.width = '100%';
+        this.plotContainer.style.height = '100%';
+        this.plotContainer.style.minHeight = '250px'; 
+        this.plotContainer.style.overflow = 'auto';
+
+        // Add the container to the floating window
+        plotWindow.appendChild(this.plotContainer);
+        document.body.appendChild(plotWindow);
+
+        // Enable dragging functionality
+        let isDragging = false;
+        let offsetX, offsetY;
+
+        plotWindow.addEventListener('mousedown', (e) => {
+            // Capture initial mouse position and the window's position
+            isDragging = true;
+            offsetX = e.clientX - plotWindow.getBoundingClientRect().left;
+            offsetY = e.clientY - plotWindow.getBoundingClientRect().top;
+
+            // Add a class or style to indicate dragging, if desired
+            plotWindow.style.cursor = 'move';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                // Calculate new position of the window
+                const xPos = e.clientX - offsetX;
+                const yPos = e.clientY - offsetY;
+
+                // Update the window's position
+                plotWindow.style.left = `${xPos}px`;
+                plotWindow.style.top = `${yPos}px`;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            plotWindow.style.cursor = 'default';
+        });
+
+        return this.plotContainer;
+    }
+
+    updatePlots(data = {}) {
+        var graphDiv = document.getElementById('xpx-plot');
+        if(!graphDiv){
+            graphDiv = this.createPlotWindow('xpx-plot');
+        }
+
+        var layout = {
+            title: {
+                text: 'x/px',
+                font: { size: 14, color: 'white' }
+            },
+            xaxis: {
+                title: {
+                    text: 'x',
+                    font: { size: 14, color: 'white' }
+                },
+                showgrid: false,
+                zeroline: false
+            },
+            yaxis: {
+                title: {
+                    text: 'px',
+                    font: { size: 14, color: 'white' }
+                },
+                showgrid: false,
+                showline: false
+            },
+            margin: { l: 30, r: 0, t: 40 , b: 30 },
+            autosize: true,
+            paper_bgcolor: 'black',  // Background outside the plot area
+            plot_bgcolor: 'black'    // Keep graph area transparen
+        };
+
+        Plotly.react(graphDiv, [data], layout); 
     }
 
     // Create control panel UI with sliders and reset button
@@ -465,9 +566,13 @@ class SceneManager {
             // this.camera.position =  + currentSegment.mesh_position + (nextSegment.mesh_position - currentSegment.mesh_position) * segmentProgress;
             this.camera.position.lerpVectors(new THREE.Vector3(-0.25 + currentSegment.mesh_position[0], 0.5 + currentSegment.mesh_position[1], -0.75 + currentSegment.mesh_position[2]), new THREE.Vector3(-0.25 + nextSegment.mesh_position[0], 0.5 + nextSegment.mesh_position[1], -0.75 + nextSegment.mesh_position[2]), segmentProgress)
             // Update each particle
+            var data_x = [];
+            var data_y = [];
             this.particles.forEach((particle, i) => {
                 const startPos = new THREE.Vector3(...currentSegment.getParticlePosition(i));
                 const endPos = new THREE.Vector3(...nextSegment.getParticlePosition(i));
+                const startMom = new THREE.Vector3(...currentSegment.getParticleMomentum(i));
+                const endMom = new THREE.Vector3(...nextSegment.getParticleMomentum(i));
 
                 if(this.scaleBeamSpread > 1.0 || this.scaleBeamPosition > 0.0){
                     const currentMeanPos = new THREE.Vector3(...currentSegment.mean_particle_position);
@@ -485,11 +590,14 @@ class SceneManager {
 
                 // Interpolate position based on constant speed progress
                 particle.mesh.position.lerpVectors(startPos, endPos, segmentProgress);
+                startMom.lerp(endMom, segmentProgress);
+                data_x.push(particle.mesh.position.x);
+                data_y.push(startMom.x); 
                 // Keep particles fully visible across all segments
                 particle.mesh.material.opacity = 1.0;
                 particle.mesh.visible = true;
             });
-
+            this.updatePlots({ x: data_x, y: data_y,  mode: 'markers'}  );
             // restart animation when we reach 100% of total progress
             if (distanceTraveled >= this.totalPathLength*1.1) { //hold for a beat before resetting to allow particles to be visible at the end of the path
                 this.resetAnimation();
@@ -630,16 +738,29 @@ class SceneManager {
         }
         data.segments.forEach(seg => {
             // This is vastly faster than parsing a million string numbers
-            const blob = atob(seg.particle_positions);
-            const buf = new Uint8Array(blob.length);
-            for (let i = 0; i < blob.length; i++) buf[i] = blob.charCodeAt(i);
-            
-            const floatArray = new Float32Array(buf.buffer);
+            const pblob = atob(seg.particle_positions);
+            const pbuf = new Uint8Array(pblob.length);
+            for (let i = 0; i < pblob.length; i++) pbuf[i] = pblob.charCodeAt(i);
+            const posFloatArray = new Float32Array(pbuf.buffer);
+
+            const mblob = atob(seg.particle_momenta);
+            const mbuf = new Uint8Array(mblob.length);
+            for (let i = 0; i < mblob.length; i++) mbuf[i] = mblob.charCodeAt(i);            
+            const momFloatArray = new Float32Array(mbuf.buffer);
+
             Object.defineProperty(seg, 'getParticlePosition', {
                 value: (i) => ([
-                    floatArray[i * 3],
-                    floatArray[i * 3 + 1],
-                    floatArray[i * 3 + 2]
+                    posFloatArray[i * 3],
+                    posFloatArray[i * 3 + 1],
+                    posFloatArray[i * 3 + 2]
+                ]),
+            });
+
+            Object.defineProperty(seg, 'getParticleMomentum', {
+                value: (i) => ([
+                    momFloatArray[i * 3],
+                    momFloatArray[i * 3 + 1],
+                    momFloatArray[i * 3 + 2]
                 ]),
             });
         });
