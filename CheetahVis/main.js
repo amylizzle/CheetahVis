@@ -36,7 +36,7 @@ class SceneManager {
 
         // Animation Properties
         this.particleSpeed = 1.0;      // Units per frame 
-        this.scaleBeamPosition = 0.0;
+        this.scaleBeamMomentum = 1.0;
         this.scaleBeamSpread = 1.0;
         this.currentData = null;       // Store latest WebSocket data
         this.animationRunning = true;  // Start with animation running
@@ -224,7 +224,7 @@ class SceneManager {
         const controls = [
             { id: 'particleSpeed', type: 'speed', label: 'Particle Speed', min: 0.001, max: 5.0, step: 0.001, scale: 1.0, initial: this.particleSpeed },
             { id: 'scaleBeamSpread', type: 'speed', label: 'Scale beam width', min: 1.0, max: 100.0, step: 1.0, scale: 1.0, initial: this.scaleBeamSpread },
-            { id: 'scaleBeamPosition', type: 'speed', label: 'Scale beam position', min: 0.0, max: 100.0, step: 1, scale: 1.0, initial: this.scaleBeamPosition }
+            { id: 'scaleBeamMomentum', type: 'speed', label: 'Scale beam momentum', min: 1.0, max: 100.0, step: 1.0, scale: 1.0, initial: this.scaleBeamMomentum }
         ];
 
         // Create each slider element
@@ -378,7 +378,12 @@ class SceneManager {
 
     // create particles as a point cloud with shaders to do the interpolation & colouring
     createParticles() {
-        const geo = new THREE.BufferGeometry();
+        const geo = new THREE.InstancedBufferGeometry();
+
+        // 1. The "Template": A simple line from 0 to 1
+        // This is the ONLY data that is doubled (just 2 points)
+        const linePositions = new Float32Array([0, 0, -.5, 0, 0, .5]); 
+        geo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));//position has special meaning in threejs shaders
         const count = this.particleCount;
 
         const positions = new Float32Array(count * 3);
@@ -386,35 +391,37 @@ class SceneManager {
         const momenta = new Float32Array(count * 3);
         const targetMomenta = new Float32Array(count * 3);
 
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3)); //position has special meaning in threejs shaders
-        geo.setAttribute('targetPosition', new THREE.BufferAttribute(targetPositions, 3));
-        geo.setAttribute('startMomenta', new THREE.BufferAttribute(momenta, 3));
-        geo.setAttribute('targetMomenta', new THREE.BufferAttribute(targetMomenta, 3));
+        geo.setAttribute('startPosition', new THREE.InstancedBufferAttribute(positions, 3)); 
+        geo.setAttribute('targetPosition', new THREE.InstancedBufferAttribute(targetPositions, 3));
+        geo.setAttribute('startMomenta', new THREE.InstancedBufferAttribute(momenta, 3));
+        geo.setAttribute('targetMomenta', new THREE.InstancedBufferAttribute(targetMomenta, 3));
 
         this.particleMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 uProgress: { value: 0 },
                 uScaleSpread: { value: this.scaleBeamSpread },
-                uScalePos: { value: this.scaleBeamPosition },
-                uSize: { value: 0.01 },
+                uScaleMomentum: { value: this.scaleBeamMomentum },
+                uMaxMomentum: { value: 1.0 },
                 startMeanPosition: { value: [0.0, 0.0, 0.0] },
                 targetMeanPosition: { value: [0.0, 0.0, 0.0] },
             },
             vertexShader: `
+            attribute vec3 startPosition;
             attribute vec3 targetPosition;
-            attribute vec3 targetMomenta;
             attribute vec3 startMomenta;
+            attribute vec3 targetMomenta;
+            
             varying vec3 vColor;
             uniform float uProgress;
             uniform float uScaleSpread;
-            uniform float uScalePos;
-            uniform float uSize;
+            uniform float uScaleMomentum;
+            uniform float uMaxMomentum;
             uniform vec3 startMeanPosition; 
             uniform vec3 targetMeanPosition;
             
             void main() {
                 //Interpolate position
-                vec3 currentPos = mix(position, targetPosition, uProgress);
+                vec3 currentPos = mix(startPosition, targetPosition, uProgress);
                 vec3 currentMeanPos = mix(startMeanPosition, targetMeanPosition, uProgress);
                 currentPos = ((currentPos - currentMeanPos) * vec3(uScaleSpread)) + currentMeanPos;
 
@@ -423,22 +430,20 @@ class SceneManager {
 
                 //momentum colouring
                 float mag = length(currentMom);
-                vColor = normalize(currentMom);
+                vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/uMaxMomentum, 0.0, 1.0));
 
-                vec4 mvPosition = modelViewMatrix * vec4(currentPos, 1.0);
-                
-                //Scale point size by distance
-                gl_PointSize = uSize * (300.0 / -mvPosition.z); 
-                gl_Position = projectionMatrix * mvPosition;
-            }
+                // 'position' here refers to the TEMPLATE line (0,0,-.5 to 0,0,.5)
+                // using the position.z to distinguish between the start and end points
+                // we draw a line centered on position with momentum dictating line length
+                vec3 finalPos = currentPos + (position.z * normalize(currentMom) * clamp(mag * uScaleMomentum, 0.001, 2.0));
+
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(finalPos, 1.0);
+            } 
         `,
             fragmentShader: `
             varying vec3 vColor;
             void main() {
-                // Make the squares round
-                float alpha = pow(1.0 - length(gl_PointCoord - vec2(0.5)), 2.0);
-                if (alpha < 0.5) discard;
-                gl_FragColor = vec4(vColor, alpha);
+                gl_FragColor = vec4(vColor, 1.0);
             }
         `,
             transparent: true,
@@ -450,7 +455,7 @@ class SceneManager {
 
         geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
 
-        this.particles = new THREE.Points(geo, this.particleMaterial);
+        this.particles = new THREE.LineSegments(geo, this.particleMaterial);
         this.scene.add(this.particles);
     }
 
@@ -526,7 +531,7 @@ class SceneManager {
         const geo = this.particles.geometry;
 
         // Access the actual Float32Arrays inside the attributes
-        const startPosAttr = geo.getAttribute('position');
+        const startPosAttr = geo.getAttribute('startPosition');
         const targetPosAttr = geo.getAttribute('targetPosition');
         const startMomentaAttr = geo.getAttribute('startMomenta');
         const targetMomentaAttr = geo.getAttribute('targetMomenta');
@@ -540,6 +545,7 @@ class SceneManager {
         startMomentaAttr.array.set(currentSegment.getParticleMomentaArray());
         targetMomentaAttr.array.set(nextSegment.getParticleMomentaArray());
 
+        this.particleMaterial.uniforms.uMaxMomentum.value = Math.max(currentSegment.getParticleMomentaArray().reduce((a, b) => Math.max(a, b), -Infinity), nextSegment.getParticleMomentaArray().reduce((a, b) => Math.max(a, b), -Infinity));
         this.particleMaterial.uniforms.startMeanPosition.value = currentSegment.mean_particle_position;
         this.particleMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
 
@@ -755,9 +761,9 @@ class SceneManager {
         this.scaleBeamSpread = parseFloat(this.controlSliders['scaleBeamSpread'].value)
         if (this.particleMaterial)
             this.particleMaterial.uniforms.uScaleSpread.value = this.scaleBeamSpread;
-        this.scaleBeamPosition = parseFloat(this.controlSliders['scaleBeamPosition'].value)
+        this.scaleBeamMomentum = parseFloat(this.controlSliders['scaleBeamMomentum'].value)
         if (this.particleMaterial)
-            this.particleMaterial.uniforms.uScalePos.value = this.scaleBeamPosition;
+            this.particleMaterial.uniforms.uScaleMomentum.value = this.scaleBeamMomentum;
         this.particleSpeed = parseFloat(this.controlSliders['particleSpeed'].value)
 
         let controlValues = {};
