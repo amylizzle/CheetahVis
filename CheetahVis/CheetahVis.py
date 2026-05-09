@@ -221,6 +221,7 @@ class CheetahVis():
         origin = np.array([0, 0, 0, 1])
         pathlength = 0
         input_transform = trimesh.transformations.identity_matrix()
+        rotate_transform = trimesh.transformations.identity_matrix()
         self._initialize_particle_beam()
 
         # Track beam through each lattice element
@@ -264,12 +265,13 @@ class CheetahVis():
             # Shift beam particles 3D position in reference to segment component
             R = element_output_transform.copy()
             R[:3, 3] = 0
+            rotate_transform = rotate_transform @ R
 
             positions = torch.stack([x, y, z, w], dim=1) 
             momenta = torch.stack([px, py, pz], dim=1)
 
             correction = (origin @ input_transform.T)
-            positions = positions @ R.T + correction
+            positions = positions @ rotate_transform.T + correction
 
             # Convert to float32 (4 bytes) and get raw bytes
             # then encode to base64 string
