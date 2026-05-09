@@ -63,9 +63,6 @@ class SceneManager {
             // Event Listeners
             this.setupEventListeners();
 
-            // Particle System Initialization
-            this.createParticles();
-
             // WebSocket Setup (only after everything else is ready)
             this.setupWebSocket();
         });
@@ -268,7 +265,7 @@ class SceneManager {
             input.addEventListener('input', () => {
                 let displayValue = input.value;
                 if (control.scale !== 1.0) {
-                    displayValue = (parseFloat(input.value)*control.scale).toFixed(2);
+                    displayValue = (parseFloat(input.value) * control.scale).toFixed(2);
                     valueDisplay.textContent = displayValue;
                 } else {
                     valueDisplay.textContent = displayValue;
@@ -379,32 +376,82 @@ class SceneManager {
         }
     }
 
-    // Initial creation of particles and adding to scene
+    // create particles as a point cloud with shaders to do the interpolation & colouring
     createParticles() {
-        console.log('Create particles ...');
+        const geo = new THREE.BufferGeometry();
+        const count = this.particleCount;
 
-        const sphereGeometry = new THREE.SphereGeometry(0.001, 8, 8); // Default: radius=0.001, widthSegments=8, heightSegments=8
-        const material = new THREE.MeshBasicMaterial({
-            color: 0x52FF4D, // Match original beam color
+        const positions = new Float32Array(count * 3);
+        const targetPositions = new Float32Array(count * 3);
+        const momenta = new Float32Array(count * 3);
+        const targetMomenta = new Float32Array(count * 3);
+
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3)); //position has special meaning in threejs shaders
+        geo.setAttribute('targetPosition', new THREE.BufferAttribute(targetPositions, 3));
+        geo.setAttribute('startMomenta', new THREE.BufferAttribute(momenta, 3));
+        geo.setAttribute('targetMomenta', new THREE.BufferAttribute(targetMomenta, 3));
+
+        this.particleMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                uProgress: { value: 0 },
+                uScaleSpread: { value: this.scaleBeamSpread },
+                uScalePos: { value: this.scaleBeamPosition },
+                uSize: { value: 0.01 },
+                startMeanPosition: { value: [0.0, 0.0, 0.0] },
+                targetMeanPosition: { value: [0.0, 0.0, 0.0] },
+            },
+            vertexShader: `
+            attribute vec3 targetPosition;
+            attribute vec3 targetMomenta;
+            attribute vec3 startMomenta;
+            varying vec3 vColor;
+            uniform float uProgress;
+            uniform float uScaleSpread;
+            uniform float uScalePos;
+            uniform float uSize;
+            uniform vec3 startMeanPosition; 
+            uniform vec3 targetMeanPosition;
+            
+            void main() {
+                //Interpolate position
+                vec3 currentPos = mix(position, targetPosition, uProgress);
+                vec3 currentMeanPos = mix(startMeanPosition, targetMeanPosition, uProgress);
+                currentPos = ((currentPos - currentMeanPos) * vec3(uScaleSpread)) + currentMeanPos;
+
+                //assuming a linear interp of momentum here, which is not correct at all
+                vec3 currentMom = mix(startMomenta, targetMomenta, uProgress); 
+
+                //momentum colouring
+                float mag = length(currentMom);
+                vColor = normalize(currentMom);
+
+                vec4 mvPosition = modelViewMatrix * vec4(currentPos, 1.0);
+                
+                //Scale point size by distance
+                gl_PointSize = uSize * (300.0 / -mvPosition.z); 
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `,
+            fragmentShader: `
+            varying vec3 vColor;
+            void main() {
+                // Make the squares round
+                float alpha = pow(1.0 - length(gl_PointCoord - vec2(0.5)), 2.0);
+                if (alpha < 0.5) discard;
+                gl_FragColor = vec4(vColor, alpha);
+            }
+        `,
             transparent: true,
-            opacity: 1.0,
-            blending: THREE.AdditiveBlending
+            blending: THREE.AdditiveBlending,
+            depthTest: true,
+            depthWrite: false,
+            side: THREE.DoubleSide
         });
 
-        // Create particles
-        for (let i = 0; i < this.particleCount; i++) {
-            const sphere = new THREE.Mesh(sphereGeometry, material.clone()); // cloned mat so particles can be recoloured individually
+        geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
 
-            this.particles.push({
-                mesh: sphere,  
-                index: i,
-            });
-
-            sphere.name = "Sphere_" + i;
-
-            this.scene.add(sphere);
-        }
-        console.log(`Total particles created: ${this.particles.length}`);
+        this.particles = new THREE.Points(geo, this.particleMaterial);
+        this.scene.add(this.particles);
     }
 
     // Model Loading & Scene Management
@@ -422,11 +469,11 @@ class SceneManager {
             'Cavity': null,
         }
 
-        for(let elementName in this.elementModels) {
+        for (let elementName in this.elementModels) {
             this.elementModels[elementName] = loader.loadAsync(`/models/${elementName}.glb`).then(
                 (gltf) => {
                     console.log(`${elementName} model loaded`);
-                    gltf.scene.scale.set(0.1,0.1,0.1);
+                    gltf.scene.scale.set(0.1, 0.1, 0.1);
                     this.elementModels[elementName] = gltf.scene;
                 })
         }
@@ -441,63 +488,65 @@ class SceneManager {
 
     // Render the scene
     animate() {
-        // Start the 3D rendering
         requestAnimationFrame(this.animate.bind(this));
 
         if (this.animationRunning && this.isSceneReady) {
             const deltaTime = this.getElapsedTime();
-
-            // Update total progress based on speed and time
             this.totalProgress = (deltaTime * this.particleSpeed) / this.totalPathLength;
-
-            // Calculate actual distance traveled along the path
             const distanceTraveled = this.totalProgress * this.totalPathLength;
 
-            // Find current segment and progress
             const { segmentIndex, segmentProgress } = this.findCurrentSegment(distanceTraveled);
-            
-            // Get position data for current and next segments
-            let currentSegment = this.currentData.segments[segmentIndex-1];
-            let nextSegment = (segmentIndex === this.segmentsCount)
-                ? currentSegment
-                : this.currentData.segments[segmentIndex];
 
-            // this.camera.position =  + currentSegment.mesh_position + (nextSegment.mesh_position - currentSegment.mesh_position) * segmentProgress;
-            this.camera.position.lerpVectors(new THREE.Vector3(-0.25 + currentSegment.mesh_position[0], 0.5 + currentSegment.mesh_position[1], -0.75 + currentSegment.mesh_position[2]), new THREE.Vector3(-0.25 + nextSegment.mesh_position[0], 0.5 + nextSegment.mesh_position[1], -0.75 + nextSegment.mesh_position[2]), segmentProgress)
-            // Update each particle
-            this.particles.forEach((particle, i) => {
-                const startPos = new THREE.Vector3(...currentSegment.getParticlePosition(i));
-                const endPos = new THREE.Vector3(...nextSegment.getParticlePosition(i));
+            // Check if we've moved to a new segment
+            if (segmentIndex !== this.lastLoadedSegment) {
+                this.updateSegmentBuffers(segmentIndex);
+                this.lastLoadedSegment = segmentIndex;
+            }
 
-                if(this.scaleBeamSpread > 1.0 || this.scaleBeamPosition > 0.0){
-                    const currentMeanPos = new THREE.Vector3(...currentSegment.mean_particle_position);
-                    const nextMeanPos = new THREE.Vector3(...nextSegment.mean_particle_position);
-                    
-                    if(this.scaleBeamSpread > 1.0){
-                        startPos.sub(currentMeanPos).multiplyScalar(this.scaleBeamSpread).add(currentMeanPos)
-                        endPos.sub(nextMeanPos).multiplyScalar(this.scaleBeamSpread).add(nextMeanPos)
-                    }
-                    if(this.scaleBeamPosition > 0.0){
-                        startPos.add(new THREE.Vector3( this.scaleBeamPosition, this.scaleBeamPosition, 0).multiply(currentMeanPos))
-                        endPos.add(new THREE.Vector3( this.scaleBeamPosition, this.scaleBeamPosition, 0).multiply(nextMeanPos))
-                    }
-                }
+            // Update the lerp progress on the GPU
+            this.particleMaterial.uniforms.uProgress.value = segmentProgress;
 
-                // Interpolate position based on constant speed progress
-                particle.mesh.position.lerpVectors(startPos, endPos, segmentProgress);
-                // Keep particles fully visible across all segments
-                particle.mesh.material.opacity = 1.0;
-                particle.mesh.visible = true;
-            });
+            let currentSegment = this.currentData.segments[segmentIndex - 1];
+            let nextSegment = this.currentData.segments[segmentIndex];
 
-            // restart animation when we reach 100% of total progress
-            if (distanceTraveled >= this.totalPathLength*1.1) { //hold for a beat before resetting to allow particles to be visible at the end of the path
+            let delta = new THREE.Vector3().subVectors(this.camera.position, this.controls.target)
+            this.controls.target.lerpVectors(new THREE.Vector3(...currentSegment.mesh_position), new THREE.Vector3(...nextSegment.mesh_position), segmentProgress);
+            this.camera.position.copy(this.controls.target).add(delta);
+            this.controls.update();
+            if (distanceTraveled >= this.totalPathLength * 1.1) {
+                //the extra .1 makes us hold for a beat before resetting to allow particles to be visible at the end of the path
                 this.resetAnimation();
             }
         }
 
         this.renderer.render(this.scene, this.camera);
-        this.composer.render();
+    }
+
+    updateSegmentBuffers(segmentIndex) {
+        const geo = this.particles.geometry;
+
+        // Access the actual Float32Arrays inside the attributes
+        const startPosAttr = geo.getAttribute('position');
+        const targetPosAttr = geo.getAttribute('targetPosition');
+        const startMomentaAttr = geo.getAttribute('startMomenta');
+        const targetMomentaAttr = geo.getAttribute('targetMomenta');
+
+
+        let currentSegment = this.currentData.segments[segmentIndex - 1];
+        let nextSegment = this.currentData.segments[segmentIndex];
+
+        startPosAttr.array.set(currentSegment.getParticlePositionArray());
+        targetPosAttr.array.set(nextSegment.getParticlePositionArray());
+        startMomentaAttr.array.set(currentSegment.getParticleMomentaArray());
+        targetMomentaAttr.array.set(nextSegment.getParticleMomentaArray());
+
+        this.particleMaterial.uniforms.startMeanPosition.value = currentSegment.mean_particle_position;
+        this.particleMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
+
+        startPosAttr.needsUpdate = true;
+        targetPosAttr.needsUpdate = true;
+        startMomentaAttr.needsUpdate = true;
+        targetMomentaAttr.needsUpdate = true;
     }
 
     // Find which segment we're in based on distance traveled
@@ -517,10 +566,10 @@ class SceneManager {
             // Check if the distance traveled is within the range of the current segment
             if (distanceTraveled >= segmentStart && distanceTraveled <= segmentEnd) {
                 const distanceInSegment = distanceTraveled - segmentStart;
-                const segmentProgress = distanceInSegment / (segmentEnd - segmentStart); 
+                const segmentProgress = distanceInSegment / (segmentEnd - segmentStart);
                 // Return the index of the segment and the progress within it
                 return {
-                    segmentIndex: i+1,
+                    segmentIndex: i + 1,
                     segmentProgress: Math.min(Math.max(segmentProgress, 0), 1.0)
                 };
             }
@@ -547,7 +596,7 @@ class SceneManager {
     async getWebSocketUrl() {
         // Use the environment variable if available, otherwise fallback to a default
         let WEBSOCKET_PORT = import.meta.env.VITE_APP_WEBSOCKET_PORT
-        if(!WEBSOCKET_PORT){
+        if (!WEBSOCKET_PORT) {
             return fetch('/wsport').then((response) => { return response.text() }).then((responsetext) => { return `ws://${window.location.hostname}:${responsetext}` })
         }
         return `ws://${window.location.hostname}:${WEBSOCKET_PORT}`;
@@ -613,38 +662,62 @@ class SceneManager {
             return;
         }
 
-        if(!this.isSceneReady){
-            for(let segmentIndex in data.segments){ 
+        if (!this.isSceneReady) {
+            for (let segmentIndex in data.segments) {
                 let segment = data.segments[segmentIndex];
                 console.log(`Processing segment with name: ${segment.segment_name}`);
-                if(segment.segment_type in this.elementModels){
+                if (segment.segment_type in this.elementModels) {
                     console.debug(`Segment name: ${segment.segment_name} is type ${segment.segment_type} and will be rendered with the corresponding model.`);
                     let meshcopy = this.elementModels[segment.segment_type].clone();
                     meshcopy.applyMatrix4((new THREE.Matrix4).fromArray(segment.element_transform))
                     this.scene.add(meshcopy)
                 }
             }
-            this.totalPathLength = data.segments[data.segments.length-1].element_position;
-            this.isSceneReady = true;
-            console.log(`Scene ready! Total path length: ${this.totalPathLength}`)
+            this.totalPathLength = data.segments[data.segments.length - 1].element_position;
         }
         data.segments.forEach(seg => {
             // This is vastly faster than parsing a million string numbers
-            const blob = atob(seg.particle_positions);
-            const buf = new Uint8Array(blob.length);
-            for (let i = 0; i < blob.length; i++) buf[i] = blob.charCodeAt(i);
-            
-            const floatArray = new Float32Array(buf.buffer);
+            const blobpos = atob(seg.particle_positions);
+            const bufpos = new Uint8Array(blobpos.length);
+            for (let i = 0; i < blobpos.length; i++) bufpos[i] = blobpos.charCodeAt(i);
+
+            const floatArrayPosition = new Float32Array(bufpos.buffer);
+            this.particleCount = floatArrayPosition.length/3;
+            console.dir(this.particleCount)
+            Object.defineProperty(seg, 'getParticlePositionArray', { value: () => (floatArrayPosition), });
             Object.defineProperty(seg, 'getParticlePosition', {
                 value: (i) => ([
-                    floatArray[i * 3],
-                    floatArray[i * 3 + 1],
-                    floatArray[i * 3 + 2]
+                    floatArrayPosition[i * 3],
+                    floatArrayPosition[i * 3 + 1],
+                    floatArrayPosition[i * 3 + 2]
+                ]),
+            });
+
+            // This is vastly faster than parsing a million string numbers
+            const blobmom = atob(seg.particle_momenta);
+            const bufmom = new Uint8Array(blobmom.length);
+            for (let i = 0; i < blobmom.length; i++) bufmom[i] = blobmom.charCodeAt(i);
+
+            const floatArrayMomenta = new Float32Array(bufmom.buffer);
+            Object.defineProperty(seg, 'getParticleMomentaArray', { value: () => (floatArrayMomenta), });
+            Object.defineProperty(seg, 'getParticleMomenta', {
+                value: (i) => ([
+                    floatArrayMomenta[i * 3],
+                    floatArrayMomenta[i * 3 + 1],
+                    floatArrayMomenta[i * 3 + 2]
                 ]),
             });
         });
         // Store current data
         this.currentData = data;
+
+
+        // Particle System Initialization
+        this.createParticles();
+
+        this.isSceneReady = true;
+
+        console.log(`Scene ready! Total path length: ${this.totalPathLength}`)
 
         // Start Animation Loop
         this.startAnimation();
@@ -652,7 +725,7 @@ class SceneManager {
     }
 
 
-    resetAnimation(){
+    resetAnimation() {
         // Reset progress state when new data arrives
         this.totalProgress = 0;
 
@@ -665,11 +738,12 @@ class SceneManager {
         // Reset particle positions to segment_0
         const startSegment = this.currentData.segments[0];
 
-        this.particles.forEach((particle, i) => {
-            particle.mesh.position.set(...startSegment.getParticlePosition(i));
-        });
-    
-        this.camera.position.set(-0.25, 0.5, -0.75);
+        this.updateSegmentBuffers(1);
+
+        let delta = new THREE.Vector3().subVectors(this.camera.position, this.controls.target)
+        this.controls.target.set(...this.currentData.segments[0].mean_particle_position)
+        this.camera.position.copy(this.controls.target).add(delta);
+        this.controls.update();
     }
 
     // Gather slider values, map them, and send over WebSocket
@@ -678,10 +752,14 @@ class SceneManager {
         if (!this.controlSliders) return;
 
         // Always update particleSpeed to match the slider value
-        this.scaleBeamSpread = parseFloat(this.controlSliders['scaleBeamSpread'].value),
-        this.scaleBeamPosition = parseFloat(this.controlSliders['scaleBeamPosition'].value),
+        this.scaleBeamSpread = parseFloat(this.controlSliders['scaleBeamSpread'].value)
+        if (this.particleMaterial)
+            this.particleMaterial.uniforms.uScaleSpread.value = this.scaleBeamSpread;
+        this.scaleBeamPosition = parseFloat(this.controlSliders['scaleBeamPosition'].value)
+        if (this.particleMaterial)
+            this.particleMaterial.uniforms.uScalePos.value = this.scaleBeamPosition;
         this.particleSpeed = parseFloat(this.controlSliders['particleSpeed'].value)
-        
+
         let controlValues = {};
 
         // If a specific control changed, log it
@@ -698,7 +776,7 @@ class SceneManager {
         } else {
             // Update all controls if no specific id is provided.
             controlValues = {
-               
+
             };
         }
 
