@@ -268,15 +268,21 @@ class CheetahVis():
             rotate_transform = rotate_transform @ R
 
             positions = torch.stack([x, y, z, w], dim=1) 
-            momenta = torch.stack([px, py, pz], dim=1)
+            momenta = torch.stack([px, py, pz, w], dim=1)
 
             correction = (origin @ input_transform.T)
             positions = positions @ rotate_transform.T + correction
+            momenta = momenta @ rotate_transform.T
+
+            test = input_transform @ element_output_transform
+            test[:3, 3] = 0
+            if(not np.allclose(rotate_transform, test)):
+                print(f"FALSE! {test} != {rotate_transform}")
 
             # Convert to float32 (4 bytes) and get raw bytes
             # then encode to base64 string
             pos_b64 = base64.b64encode(positions[:, :3].numpy().astype(np.float32).tobytes()).decode('utf-8')
-            mom_b64 = base64.b64encode(momenta.numpy().astype(np.float32).tobytes()).decode('utf-8')
+            mom_b64 = base64.b64encode(momenta[:, :3].numpy().astype(np.float32).tobytes()).decode('utf-8')
 
             # Store segment data
             self.data["segments"].append(
@@ -288,7 +294,7 @@ class CheetahVis():
                     "mean_particle_position": positions[:,:3].mean(dim=0).tolist(),
                     "element_transform": input_transform.T.flatten().tolist(),
                     "element_position": pathlength,
-                    "mesh_position": correction.tolist()
+                    "mesh_position": correction.tolist(),
                 }
             )
             pathlength += element.length.item()

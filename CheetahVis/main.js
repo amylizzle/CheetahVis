@@ -26,8 +26,8 @@ class SceneManager {
         this.isSceneReady = false;            // Flag to track whether the scene is fully loaded and ready
 
         // Particle System Properties
-        this.particleCount = 1000;      // The total number of particles to be simulated, matching the Python code
-        this.particles = [];            // Array to hold all particle instances for the simulation
+        this.particleCount = 1000;      // The total number of particles, set by size of floatarray from sim
+        this.particles = null;            // LineSegment mesh to draw 
 
         // Segment Properties
         this.totalPathLength = 1;       // Total length of the entire path, calculated from segment distances
@@ -45,16 +45,16 @@ class SceneManager {
         // Scene Initialization
         this.scene = new THREE.Scene();
         this.scene.name = "Scene";
+        this.graphScene = new THREE.Scene();
+        this.graphScene.name = "GraphScene";
+        this.graphCamera = null;
 
         // Setup core rendering components
         this.camera = this.setupCamera();
         this.renderer = this.setupRenderer(containerId);
+        this.graphrenderer = this.setupGraphWindow();
         this.controls = this.setupOrbitalControls();
         this.composer = this.setupPostProcessing();
-
-        // Raycasting and Interaction
-        this.raycaster = new THREE.Raycaster();
-        this.mouse = new THREE.Vector2();
 
         // Scene Configuration
         this.setupLighting();
@@ -78,8 +78,7 @@ class SceneManager {
         // Set how far the camera will start from the 3D model
         camera.position.set(-1.5, 0.75, -1.5); // Initial camera position (x, y, z)
         camera.updateMatrixWorld();  // Apply rotation change
-        this.scene.add(camera)
-        
+
         return camera;
     }
 
@@ -90,6 +89,47 @@ class SceneManager {
 
         // Add the renderer to the DOM
         document.getElementById(containerId).appendChild(renderer.domElement);
+        return renderer;
+    }
+
+    setupGraphWindow() {
+        const win = document.getElementById("window-container")
+        const header = document.getElementById("window-header");
+
+        let isDragging = false;
+        let offset = { x: window.innerWidth - win.getBoundingClientRect().width, y: window.innerHeight - win.getBoundingClientRect().height };
+        win.style.left = `${offset.x}px`;
+        win.style.top = `${offset.y}px`;
+
+        header.addEventListener("mousedown", (e) => {
+            isDragging = true;
+            offset.x = e.clientX - win.offsetLeft;
+            offset.y = e.clientY - win.offsetTop;
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            if (!isDragging) return;
+
+            win.style.left = `${e.clientX - offset.x}px`;
+            win.style.top = `${e.clientY - offset.y}px`;
+        });
+
+        window.addEventListener("mouseup", () => {
+            isDragging = false;
+        });
+
+        const container = document.getElementById("graph-canvas-container");
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        // Renderer setup
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(width, height);
+        container.appendChild(renderer.domElement);
+
+        this.graphCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 1 );
+
+        document.getElementById("main").appendChild(win);
         return renderer;
     }
 
@@ -265,14 +305,14 @@ class SceneManager {
             });
             // Explicitly update internal state after resetting sliders
             this.updateControls();
-        });        
+        });
         panel.appendChild(resetButton);
 
         // Create animation controls
         const skipbackwardButton = document.createElement('button');
         Object.assign(skipbackwardButton.style, buttonStyle);
         skipbackwardButton.textContent = '⏮';
-        skipbackwardButton.style.backgroundColor = 'red';
+        skipbackwardButton.style.backgroundColor = 'blue';
         skipbackwardButton.style.color = '#fff';
         skipbackwardButton.addEventListener('click', () => {
             this.totalProgress = 0.0;
@@ -281,13 +321,16 @@ class SceneManager {
         const reverseButton = document.createElement('button');
         Object.assign(reverseButton.style, buttonStyle);
         reverseButton.textContent = '⏪︎';
-        reverseButton.style.backgroundColor = 'red';
+        reverseButton.style.backgroundColor = 'green';
         reverseButton.style.color = '#fff';
         reverseButton.addEventListener('mousedown', () => {
             this.speedMultiplier = -1.0;
+            this.restoreState = this.animationRunning
+            this.animationRunning = true
         });
         reverseButton.addEventListener('mouseup', () => {
             this.speedMultiplier = 1.0;
+            this.animationRunning = this.restoreState
         });
 
         const playpauseButton = document.createElement('button');
@@ -298,24 +341,28 @@ class SceneManager {
 
         playpauseButton.addEventListener('click', () => {
             this.animationRunning = !this.animationRunning;
+            playpauseButton.style.backgroundColor = this.animationRunning ? 'red' : 'green'
         });
-        
+
         const fastforwardButton = document.createElement('button');
         Object.assign(fastforwardButton.style, buttonStyle);
         fastforwardButton.textContent = '⏩︎';
-        fastforwardButton.style.backgroundColor = 'red';
+        fastforwardButton.style.backgroundColor = 'green';
         fastforwardButton.style.color = '#fff';
         fastforwardButton.addEventListener('mousedown', () => {
             this.speedMultiplier = 2.0;
+            this.restoreState = this.animationRunning
+            this.animationRunning = true
         });
         fastforwardButton.addEventListener('mouseup', () => {
             this.speedMultiplier = 1.0;
+            this.animationRunning = this.restoreState
         });
 
         const skipforwardButton = document.createElement('button');
         Object.assign(skipforwardButton.style, buttonStyle);
         skipforwardButton.textContent = '⏭';
-        skipforwardButton.style.backgroundColor = 'red';
+        skipforwardButton.style.backgroundColor = 'blue';
         skipforwardButton.style.color = '#fff';
         skipforwardButton.addEventListener('click', () => {
             this.totalProgress = 1.0;
@@ -487,14 +534,14 @@ class SceneManager {
                     float offset = dot(position, vec3(0.1, 0.4, 0.7));
 
                     // map to containing object space, with a little margin for axes etc
-                    float x = offset+(((xval - xMeanPos) / xrange) * 0.25);
+                    float x = offset+(((xval - xMeanPos) / xrange) * 0.2);
                     float y = 0.1+((yval / yrange) * 0.8);
 
                     // Simple Red-Blue gradient for momentum magnitude
                     float mag = length(mom);
-                    vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/uMomRange.x, 0.0, 1.0));
+                    vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/yrange, 0.0, 1.0));
 
-                    gl_Position =  projectionMatrix * modelViewMatrix * vec4(x, y, -0.01, 1.0);
+                    gl_Position =  vec4(x, y, -0.01, 1.0);
                     gl_PointSize = 5.0;
                 }
             `,
@@ -513,9 +560,10 @@ class SceneManager {
         });
 
         this.graphs = new THREE.Points(geo, this.graphMaterial);
-        this.graphs.position.set(0., 0., -0.5);
+        this.graphs.position.set(0., 0., 0.);
         this.graphs.frustumCulled = false;
-        this.camera.add(this.graphs);
+        // this.graphScene.add(this.graphCamera)
+        this.graphScene.add(this.graphs);
     }
 
     // Model Loading & Scene Management
@@ -555,10 +603,9 @@ class SceneManager {
     animate() {
         requestAnimationFrame(this.animate.bind(this));
         if (this.animationRunning && this.isSceneReady) {
-            const deltaTime = (performance.now() - this.lastAnimateTick)/1000.0
+            const deltaTime = (performance.now() - this.lastAnimateTick) / 1000.0
             this.totalProgress += this.speedMultiplier * (deltaTime * this.particleSpeed) / this.totalPathLength;
             const distanceTraveled = this.totalProgress * this.totalPathLength;
-            console.log(this.totalProgress)
             const { segmentIndex, segmentProgress } = this.findCurrentSegment(distanceTraveled);
 
             // Check if we've moved to a new segment
@@ -584,12 +631,13 @@ class SceneManager {
         }
         this.lastAnimateTick = performance.now();
         this.renderer.render(this.scene, this.camera);
+        this.graphrenderer.render(this.graphScene, this.graphCamera);
     }
 
     updateSegmentBuffers(segmentIndex) {
         let currentSegment = this.currentData.segments[segmentIndex - 1];
         let nextSegment = this.currentData.segments[segmentIndex];
-        
+
         const geo = this.particles.geometry;
         const startPosAttr = geo.getAttribute('startPosition');
         const targetPosAttr = geo.getAttribute('targetPosition');
@@ -814,7 +862,7 @@ class SceneManager {
             if (!seg.mesh_position.every(v => Number.isFinite(v))) {
                 console.error('Invalid mean_particle_position:', seg);
                 return;
-            }            
+            }
         });
         // Store current data
         this.currentData = data;
@@ -824,8 +872,6 @@ class SceneManager {
         this.createPhaseSpaceGraphs();
 
         this.isSceneReady = true;
-        console.log(this.controls.target.toArray())
-        console.log(this.camera.position.toArray())
 
         console.log(`Scene ready! Total path length: ${this.totalPathLength}`)
         // Start Animation Loop
@@ -846,7 +892,6 @@ class SceneManager {
 
     // Gather slider values, map them, and send over WebSocket
     updateControls(changedControlId = null) {
-        console.log("updateControls")
         if (!this.controlSliders) return;
 
         // Always update particleSpeed to match the slider value
