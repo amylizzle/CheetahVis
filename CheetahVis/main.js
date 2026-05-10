@@ -24,15 +24,16 @@ class SceneManager {
         this.max_reconnect_attempts = 5;      // Maximum number of reconnect attempts before giving up
         this.reconnect_delay = 2000;          // Delay in milliseconds between reconnect attempts (2 seconds)
         this.isSceneReady = false;            // Flag to track whether the scene is fully loaded and ready
-        this.newDataAvailable = false;        // Flag to track if new data has been received from the WebSocket
 
         // Particle System Properties
         this.particleCount = 1000;      // The total number of particles to be simulated, matching the Python code
         this.particles = [];            // Array to hold all particle instances for the simulation
 
         // Segment Properties
-        this.totalPathLength = 0;       // Total length of the entire path, calculated from segment distances
+        this.totalPathLength = 1;       // Total length of the entire path, calculated from segment distances
         this.totalProgress = 0;         // Overall progress through all segments (from 0 to 1) for the animation
+        this.lastAnimateTick = performance.now();
+        this.speedMultiplier = 1.0;
 
         // Animation Properties
         this.particleSpeed = 1.0;      // Units per frame 
@@ -57,12 +58,10 @@ class SceneManager {
 
         // Scene Configuration
         this.setupLighting();
-        this.createReflectivePlane();
         this.createControlPanel();
         this.loadModels().then(() => {
             // Event Listeners
             this.setupEventListeners();
-
             // WebSocket Setup (only after everything else is ready)
             this.setupWebSocket();
         });
@@ -71,16 +70,16 @@ class SceneManager {
     // Scene Initialization
     setupCamera() {
         const camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
+            75, //fov
+            window.innerWidth / window.innerHeight, //aspect ratio
+            0.001, //near plane
+            1000 //far plane
         );
         // Set how far the camera will start from the 3D model
         camera.position.set(-1.5, 0.75, -1.5); // Initial camera position (x, y, z)
-
         camera.updateMatrixWorld();  // Apply rotation change
-
+        this.scene.add(camera)
+        
         return camera;
     }
 
@@ -98,12 +97,11 @@ class SceneManager {
         // Add orbit controls to the camera, enabling rotation and zoom functionality using the mouse
         const controls = new OrbitControls(this.camera, this.renderer.domElement);
 
-        controls.target.set(0.0, 0.0, 2.0); // Looking towards the center of the diagnostic screen
+        controls.target.set(0.0, 0.0, 0.0); // Looking towards the center of the diagnostic screen
         controls.minDistance = 0;    // Minimum zoom distance (closer)
         controls.maxDistance = 40;   // Maximum zoom distance (farther)
         controls.minPolarAngle = 0;       // 0 radians (0 degrees) - Looking straight up (at the sky)
         controls.maxPolarAngle = Math.PI;   // π radians (180 degrees) - Looking straight down (at the ground)
-
         controls.update();  // Apply the change
 
         return controls;
@@ -149,51 +147,6 @@ class SceneManager {
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
         });
-
-        // Handle pagehide to allow back/forward cache (bfcache)
-        window.addEventListener("pagehide", () => {
-            if (window.myBroadcastChannel) {
-                window.myBroadcastChannel.close();
-                window.myBroadcastChannel = null;
-            }
-
-            if (this.websocket) {
-                this.websocket.close();
-            }
-        });
-
-        // Click event handling
-        // const delta = 4;
-        // let startX, startY;
-
-        // document.addEventListener("pointerdown", (event) => {
-        //     startX = event.pageX;
-        //     startY = event.pageY;
-        // });
-
-        // document.addEventListener("pointerup", (event) => {
-        //     const diffX = Math.abs(event.pageX - startX);
-        //     const diffY = Math.abs(event.pageY - startY);
-
-        //     if (diffX < delta && diffY < delta) {
-        //         //not a click-drag
-        //     }
-        // });
-    }
-
-    createReflectivePlane() {
-        const geometry = new THREE.PlaneGeometry(200, 200);
-        const groundMirror = new Reflector(geometry, {
-            clipBias: 0.003,
-            textureWidth: window.innerWidth * window.devicePixelRatio,
-            textureHeight: window.innerHeight * window.devicePixelRatio,
-            color: 0x3333333,
-        });
-
-        groundMirror.rotateX(-Math.PI / 2);
-        groundMirror.position.y = -1.4;
-        groundMirror.name = "Reflector";
-        this.scene.add(groundMirror);
     }
 
     // Create control panel UI with sliders and reset button
@@ -281,53 +234,6 @@ class SceneManager {
             this.controlSliders[control.id] = input;
         });
 
-        // Create reset button
-        const resetButton = document.createElement('button');
-        resetButton.textContent = 'Reset';
-        resetButton.style.marginTop = '10px';
-        resetButton.style.width = '40px'; // '50%'
-        resetButton.style.height = '40px'; // Set the same height for a circle
-        resetButton.style.padding = '0'; // No extra padding (prev '5px')
-        resetButton.style.border = 'none';
-        resetButton.style.borderRadius = '50%'; // Make it a circle (prev '3px')
-        resetButton.style.display = 'flex'; // Ensure text is centered
-        resetButton.style.alignItems = 'center';
-        resetButton.style.justifyContent = 'center';
-        resetButton.style.cursor = 'pointer';
-        resetButton.style.backgroundColor = '#4885a8';
-        resetButton.style.color = '#fff';
-        resetButton.style.fontSize = '10px'; // '12px'
-
-        // Reset function
-        resetButton.addEventListener('click', () => {
-            Object.keys(this.controlSliders).forEach(id => {
-                this.controlSliders[id].value = this.defaultValues[id];
-                document.getElementById(`${id}-value`).textContent = this.defaultValues[id];
-            });
-            // Explicitly update internal state after resetting sliders
-            this.updateControls();
-        });
-
-        // Create Stop button
-        const stopButton = document.createElement('button');
-        stopButton.textContent = 'Stop';
-        stopButton.style.width = '40px';
-        stopButton.style.height = '40px';
-        stopButton.style.borderRadius = '50%';
-        stopButton.style.display = 'flex';
-        stopButton.style.alignItems = 'center';
-        stopButton.style.justifyContent = 'center';
-        stopButton.style.fontSize = '12px';
-        stopButton.style.backgroundColor = 'red';
-        stopButton.style.color = '#fff';
-        stopButton.style.border = 'none';
-        stopButton.style.cursor = 'pointer';
-
-        stopButton.addEventListener('click', () => {
-            // Send updated value over WebSocket
-            this.updateControls("stopSimulation");
-        });
-
         // Common button styles
         const buttonStyle = {
             width: '40px',
@@ -344,15 +250,76 @@ class SceneManager {
             cursor: 'pointer',
         };
 
-        // Apply styles to Reset button
+        // Create reset button
+        const resetButton = document.createElement('button');
         Object.assign(resetButton.style, buttonStyle);
+        resetButton.textContent = 'Reset';
         resetButton.style.backgroundColor = '#4885a8';
         resetButton.style.color = '#fff';
 
-        // Apply styles to Stop button
-        Object.assign(stopButton.style, buttonStyle);
-        stopButton.style.backgroundColor = 'red';
-        stopButton.style.color = '#fff';
+        // Reset function
+        resetButton.addEventListener('click', () => {
+            Object.keys(this.controlSliders).forEach(id => {
+                this.controlSliders[id].value = this.defaultValues[id];
+                document.getElementById(`${id}-value`).textContent = this.defaultValues[id];
+            });
+            // Explicitly update internal state after resetting sliders
+            this.updateControls();
+        });        
+        panel.appendChild(resetButton);
+
+        // Create animation controls
+        const skipbackwardButton = document.createElement('button');
+        Object.assign(skipbackwardButton.style, buttonStyle);
+        skipbackwardButton.textContent = '⏮';
+        skipbackwardButton.style.backgroundColor = 'red';
+        skipbackwardButton.style.color = '#fff';
+        skipbackwardButton.addEventListener('click', () => {
+            this.totalProgress = 0.0;
+        });
+
+        const reverseButton = document.createElement('button');
+        Object.assign(reverseButton.style, buttonStyle);
+        reverseButton.textContent = '⏪︎';
+        reverseButton.style.backgroundColor = 'red';
+        reverseButton.style.color = '#fff';
+        reverseButton.addEventListener('mousedown', () => {
+            this.speedMultiplier = -1.0;
+        });
+        reverseButton.addEventListener('mouseup', () => {
+            this.speedMultiplier = 1.0;
+        });
+
+        const playpauseButton = document.createElement('button');
+        Object.assign(playpauseButton.style, buttonStyle);
+        playpauseButton.textContent = '⏯';
+        playpauseButton.style.backgroundColor = 'red';
+        playpauseButton.style.color = '#fff';
+
+        playpauseButton.addEventListener('click', () => {
+            this.animationRunning = !this.animationRunning;
+        });
+        
+        const fastforwardButton = document.createElement('button');
+        Object.assign(fastforwardButton.style, buttonStyle);
+        fastforwardButton.textContent = '⏩︎';
+        fastforwardButton.style.backgroundColor = 'red';
+        fastforwardButton.style.color = '#fff';
+        fastforwardButton.addEventListener('mousedown', () => {
+            this.speedMultiplier = 2.0;
+        });
+        fastforwardButton.addEventListener('mouseup', () => {
+            this.speedMultiplier = 1.0;
+        });
+
+        const skipforwardButton = document.createElement('button');
+        Object.assign(skipforwardButton.style, buttonStyle);
+        skipforwardButton.textContent = '⏭';
+        skipforwardButton.style.backgroundColor = 'red';
+        skipforwardButton.style.color = '#fff';
+        skipforwardButton.addEventListener('click', () => {
+            this.totalProgress = 1.0;
+        });
 
         // Create button container
         const buttonContainer = document.createElement('div');
@@ -360,11 +327,14 @@ class SceneManager {
         buttonContainer.style.gap = '10px';
         buttonContainer.style.marginTop = '10px';
         buttonContainer.style.justifyContent = 'center'; // Aligns buttons to the left
-        buttonContainer.style.width = '50%';
+        buttonContainer.style.width = '95%';
 
         // Append buttons to the button container
-        buttonContainer.appendChild(resetButton);
-        buttonContainer.appendChild(stopButton);
+        buttonContainer.appendChild(skipbackwardButton);
+        buttonContainer.appendChild(reverseButton);
+        buttonContainer.appendChild(playpauseButton);
+        buttonContainer.appendChild(fastforwardButton);
+        buttonContainer.appendChild(skipforwardButton);
 
         // Append button container to the control panel
         panel.appendChild(buttonContainer);
@@ -380,9 +350,8 @@ class SceneManager {
     createParticles() {
         const geo = new THREE.InstancedBufferGeometry();
 
-        // 1. The "Template": A simple line from 0 to 1
-        // This is the ONLY data that is doubled (just 2 points)
-        const linePositions = new Float32Array([0, 0, -.5, 0, 0, .5]); 
+        // template for line (two points) that gets applied to each point in the particle array
+        const linePositions = new Float32Array([0, 0, -.5, 0, 0, .5]);
         geo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));//position has special meaning in threejs shaders
         const count = this.particleCount;
 
@@ -391,7 +360,7 @@ class SceneManager {
         const momenta = new Float32Array(count * 3);
         const targetMomenta = new Float32Array(count * 3);
 
-        geo.setAttribute('startPosition', new THREE.InstancedBufferAttribute(positions, 3)); 
+        geo.setAttribute('startPosition', new THREE.InstancedBufferAttribute(positions, 3));
         geo.setAttribute('targetPosition', new THREE.InstancedBufferAttribute(targetPositions, 3));
         geo.setAttribute('startMomenta', new THREE.InstancedBufferAttribute(momenta, 3));
         geo.setAttribute('targetMomenta', new THREE.InstancedBufferAttribute(targetMomenta, 3));
@@ -430,7 +399,7 @@ class SceneManager {
 
                 //momentum colouring
                 float mag = length(currentMom);
-                vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/uMaxMomentum, 0.0, 1.0));
+                vColor = mix(vec3(1.0, clamp(position.z, 0.0, 1.0), 0.0), vec3(0.0, clamp(position.z, 0.0, 1.0), 1.0), clamp(mag/uMaxMomentum, 0.0, 1.0));
 
                 // 'position' here refers to the TEMPLATE line (0,0,-.5 to 0,0,.5)
                 // using the position.z to distinguish between the start and end points
@@ -457,6 +426,96 @@ class SceneManager {
 
         this.particles = new THREE.LineSegments(geo, this.particleMaterial);
         this.scene.add(this.particles);
+    }
+
+    createPhaseSpaceGraphs() {
+        const geo = new THREE.InstancedBufferGeometry();
+
+        // one "point" for each graph (x/px, y/py, z/pz)
+        const linePositions = new Float32Array([
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0
+        ]);
+        geo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));//position has special meaning in threejs shaders
+        const count = this.particleCount;
+
+        const positions = new Float32Array(count * 3);
+        const targetPositions = new Float32Array(count * 3);
+        const momenta = new Float32Array(count * 3);
+        const targetMomenta = new Float32Array(count * 3);
+
+        geo.setAttribute('startPosition', new THREE.InstancedBufferAttribute(positions, 3));
+        geo.setAttribute('targetPosition', new THREE.InstancedBufferAttribute(targetPositions, 3));
+        geo.setAttribute('startMomenta', new THREE.InstancedBufferAttribute(momenta, 3));
+        geo.setAttribute('targetMomenta', new THREE.InstancedBufferAttribute(targetMomenta, 3));
+
+        this.graphMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                uProgress: { value: 0 },
+                uPosRange: { value: [.1, .1, .1] }, // Max meters
+                uMomRange: { value: [.1, .1, .1] }, // Max momentum units
+                startMeanPosition: { value: [0.0, 0.0, 0.0] },
+                targetMeanPosition: { value: [0.0, 0.0, 0.0] },
+            },
+            vertexShader: `
+                attribute vec3 startPosition;
+                attribute vec3 targetPosition;
+                attribute vec3 startMomenta;
+                attribute vec3 targetMomenta;
+                
+                varying vec3 vColor;
+                uniform float uProgress;
+                uniform vec3 uPosRange;
+                uniform vec3 uMomRange;
+                uniform vec3 startMeanPosition; 
+                uniform vec3 targetMeanPosition;
+
+                void main() {
+                    vec3 pos = mix(startPosition, targetPosition, uProgress);
+                    vec3 mom = mix(startMomenta, targetMomenta, uProgress);
+                    vec3 currentMeanPos = mix(startMeanPosition, targetMeanPosition, uProgress);
+
+                    // graph select by multiplying position vector (which is 0 at the elements we aren't considering)
+                    // and then working on the sum
+                    float xval = dot(position * pos, vec3(1.0));
+                    float yval = dot(position * mom, vec3(1.0));
+                    float xrange = dot(position * uPosRange, vec3(1.0));
+                    float yrange = dot(position * uMomRange, vec3(1.0));
+                    float xMeanPos = dot(position * currentMeanPos, vec3(1.0));
+                    
+                    float offset = dot(position, vec3(0.1, 0.4, 0.7));
+
+                    // map to containing object space, with a little margin for axes etc
+                    float x = offset+(((xval - xMeanPos) / xrange) * 0.25);
+                    float y = 0.1+((yval / yrange) * 0.8);
+
+                    // Simple Red-Blue gradient for momentum magnitude
+                    float mag = length(mom);
+                    vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/uMomRange.x, 0.0, 1.0));
+
+                    gl_Position =  projectionMatrix * modelViewMatrix * vec4(x, y, -0.01, 1.0);
+                    gl_PointSize = 5.0;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                void main() {
+                    if (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;
+                    gl_FragColor = vec4(vColor, 0.8);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthTest: true,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+
+        this.graphs = new THREE.Points(geo, this.graphMaterial);
+        this.graphs.position.set(0., 0., -0.5);
+        this.graphs.frustumCulled = false;
+        this.camera.add(this.graphs);
     }
 
     // Model Loading & Scene Management
@@ -488,18 +547,18 @@ class SceneManager {
     // Rendering & Animation
     startAnimation() {
         this.animationRunning = true;
+        this.lastAnimateTick = performance.now() - 1;
         this.animate(); // restart the animation loop
     }
 
     // Render the scene
     animate() {
         requestAnimationFrame(this.animate.bind(this));
-
         if (this.animationRunning && this.isSceneReady) {
-            const deltaTime = this.getElapsedTime();
-            this.totalProgress = (deltaTime * this.particleSpeed) / this.totalPathLength;
+            const deltaTime = (performance.now() - this.lastAnimateTick)/1000.0
+            this.totalProgress += this.speedMultiplier * (deltaTime * this.particleSpeed) / this.totalPathLength;
             const distanceTraveled = this.totalProgress * this.totalPathLength;
-
+            console.log(this.totalProgress)
             const { segmentIndex, segmentProgress } = this.findCurrentSegment(distanceTraveled);
 
             // Check if we've moved to a new segment
@@ -523,22 +582,19 @@ class SceneManager {
                 this.resetAnimation();
             }
         }
-
+        this.lastAnimateTick = performance.now();
         this.renderer.render(this.scene, this.camera);
     }
 
     updateSegmentBuffers(segmentIndex) {
+        let currentSegment = this.currentData.segments[segmentIndex - 1];
+        let nextSegment = this.currentData.segments[segmentIndex];
+        
         const geo = this.particles.geometry;
-
-        // Access the actual Float32Arrays inside the attributes
         const startPosAttr = geo.getAttribute('startPosition');
         const targetPosAttr = geo.getAttribute('targetPosition');
         const startMomentaAttr = geo.getAttribute('startMomenta');
         const targetMomentaAttr = geo.getAttribute('targetMomenta');
-
-
-        let currentSegment = this.currentData.segments[segmentIndex - 1];
-        let nextSegment = this.currentData.segments[segmentIndex];
 
         startPosAttr.array.set(currentSegment.getParticlePositionArray());
         targetPosAttr.array.set(nextSegment.getParticlePositionArray());
@@ -549,10 +605,52 @@ class SceneManager {
         this.particleMaterial.uniforms.startMeanPosition.value = currentSegment.mean_particle_position;
         this.particleMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
 
+        this.graphMaterial.uniforms.startMeanPosition.value = currentSegment.mean_particle_position;
+        this.graphMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
+        this.graphMaterial.uniforms.uPosRange.value = currentSegment.position_range;
+        this.graphMaterial.uniforms.uMomRange.value = currentSegment.momenta_range;
+
         startPosAttr.needsUpdate = true;
         targetPosAttr.needsUpdate = true;
         startMomentaAttr.needsUpdate = true;
         targetMomentaAttr.needsUpdate = true;
+
+        const geograph = this.graphs.geometry;
+        const startPosAttrG = geograph.getAttribute('startPosition');
+        const targetPosAttrG = geograph.getAttribute('targetPosition');
+        const startMomentaAttrG = geograph.getAttribute('startMomenta');
+        const targetMomentaAttrG = geograph.getAttribute('targetMomenta');
+
+        startPosAttrG.array.set(currentSegment.getParticlePositionArray());
+        targetPosAttrG.array.set(nextSegment.getParticlePositionArray());
+        startMomentaAttrG.array.set(currentSegment.getParticleMomentaArray());
+        targetMomentaAttrG.array.set(nextSegment.getParticleMomentaArray());
+
+        startPosAttrG.needsUpdate = true;
+        targetPosAttrG.needsUpdate = true;
+        startMomentaAttrG.needsUpdate = true;
+        targetMomentaAttrG.needsUpdate = true;
+    }
+
+    getXYZRange(floatArray) {
+        const initial = {
+            min: [Infinity, Infinity, Infinity],
+            max: [-Infinity, -Infinity, -Infinity]
+        };
+
+        const bounds = floatArray.reduce((acc, val, i) => {
+            const axis = i % 3; // 0 for x, 1 for y, 2 for z
+
+            if (val < acc.min[axis]) acc.min[axis] = val;
+            if (val > acc.max[axis]) acc.max[axis] = val;
+
+            return acc;
+        }, initial);
+        return [
+            bounds.max[0] - bounds.min[0],
+            bounds.max[1] - bounds.min[1],
+            bounds.max[2] - bounds.min[2],
+        ]
     }
 
     // Find which segment we're in based on distance traveled
@@ -565,7 +663,6 @@ class SceneManager {
 
         // Iterate through the segment start points to find the current segment
         for (let i = 0; i < this.currentData.segments.length - 1; i++) {
-
             const segmentStart = this.currentData.segments[i].element_position;
             const segmentEnd = this.currentData.segments[i + 1].element_position;
 
@@ -583,12 +680,6 @@ class SceneManager {
 
         // If we've exceeded the total path length, return the last segment at 100% progress
         return { segmentIndex: this.currentData.segments.length - 1, segmentProgress: 0 };
-    }
-
-    getElapsedTime() {
-        // Assuming you start the timing when the particle system is initialized or when the particle starts moving
-        const now = performance.now(); // You could also use Date.now()
-        return (now - this.startTime) / 1000;  // Returns time in seconds
     }
 
     // WebSocket setup
@@ -688,8 +779,7 @@ class SceneManager {
             for (let i = 0; i < blobpos.length; i++) bufpos[i] = blobpos.charCodeAt(i);
 
             const floatArrayPosition = new Float32Array(bufpos.buffer);
-            this.particleCount = floatArrayPosition.length/3;
-            console.dir(this.particleCount)
+            this.particleCount = floatArrayPosition.length / 3;
             Object.defineProperty(seg, 'getParticlePositionArray', { value: () => (floatArrayPosition), });
             Object.defineProperty(seg, 'getParticlePosition', {
                 value: (i) => ([
@@ -713,18 +803,31 @@ class SceneManager {
                     floatArrayMomenta[i * 3 + 2]
                 ]),
             });
+
+            seg.position_range = this.getXYZRange(floatArrayPosition);
+            seg.momenta_range = this.getXYZRange(floatArrayMomenta);
+
+            if (!seg.mean_particle_position.every(v => Number.isFinite(v))) {
+                console.error('Invalid mean_particle_position:', seg);
+                return;
+            }
+            if (!seg.mesh_position.every(v => Number.isFinite(v))) {
+                console.error('Invalid mean_particle_position:', seg);
+                return;
+            }            
         });
         // Store current data
         this.currentData = data;
 
-
         // Particle System Initialization
         this.createParticles();
+        this.createPhaseSpaceGraphs();
 
         this.isSceneReady = true;
+        console.log(this.controls.target.toArray())
+        console.log(this.camera.position.toArray())
 
         console.log(`Scene ready! Total path length: ${this.totalPathLength}`)
-
         // Start Animation Loop
         this.startAnimation();
         this.resetAnimation();
@@ -732,21 +835,10 @@ class SceneManager {
 
 
     resetAnimation() {
-        // Reset progress state when new data arrives
         this.totalProgress = 0;
-
-        // Initialize the start time per data update
-        this.startTime = performance.now();
-
-        // Flag that new data has arrived
-        this.newDataAvailable = true;
-
-        // Reset particle positions to segment_0
-        const startSegment = this.currentData.segments[0];
-
         this.updateSegmentBuffers(1);
-
         let delta = new THREE.Vector3().subVectors(this.camera.position, this.controls.target)
+
         this.controls.target.set(...this.currentData.segments[0].mean_particle_position)
         this.camera.position.copy(this.controls.target).add(delta);
         this.controls.update();
@@ -765,36 +857,6 @@ class SceneManager {
         if (this.particleMaterial)
             this.particleMaterial.uniforms.uScaleMomentum.value = this.scaleBeamMomentum;
         this.particleSpeed = parseFloat(this.controlSliders['particleSpeed'].value)
-
-        let controlValues = {};
-
-        // If a specific control changed, log it
-        if (changedControlId) {
-            const slider = this.controlSliders[changedControlId];
-
-            if (changedControlId === 'stopSimulation') {
-                controlValues[changedControlId] = 1
-            } else if (changedControlId === 'particleSpeed' || 'scaleBeamSpread' || 'scaleBeamPosition') {
-                return // don't send to the websocket if only local things changed
-            } else {
-                controlValues[changedControlId] = parseFloat(slider.value);
-            }
-        } else {
-            // Update all controls if no specific id is provided.
-            controlValues = {
-
-            };
-        }
-
-        // If WebSocket is open, send the control values (excluding particleSpeed as it's local)
-        const wsData = { controls: controlValues };
-
-        // Confirm the WebSocket is connected before sending updates:
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(wsData));
-        } else {
-            console.warn("WebSocket not ready. Message not sent.");
-        }
     }
 
     // Create connection status element if it doesn't exist

@@ -343,6 +343,7 @@ class CheetahVis():
             logger.debug("acquired lock for client add")
             self.connected = True
             self.clients.add(websocket)
+            await self.safe_send(websocket, self.data)
         logger.debug("WebSocket connection established.")
 
         try:
