@@ -47,8 +47,7 @@ DEFAULT_NUM_PARTICLES = 10000
 
 class CheetahVis():
     """
-    A Gym wrapper that encapsulates the beam simulation logic and manages the
-    initialization of the JavaScript web application for 3D visualization.
+
 
     Args:
         lattice_path (Path | str): the path to a JSON formatted Cheetah lattice 
@@ -97,31 +96,13 @@ class CheetahVis():
             lattice_path
         )
 
-
     async def start_server(self):
         # Get the current event loop so external calls can update cheetah state and trigger renders
         self.asyncio_loop = asyncio.get_running_loop()
+        await self.reset()
         # Start the websocket and return the coroutine
         # Start the JavaScript web application (dev or prod mode)
         return await asyncio.gather(self._start_websocket(), self._start_web_application())
-
-    def reset(
-        self, *, seed: Optional[int] = None, options: Optional[Dict] = None
-    ) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """
-        Reset the environment, reset last_action, and run the simulation.
-
-        Args:
-            seed (Optional[int]): Seed for random number generation.
-            options (Optional[Dict]): Additional reset options.
-
-        Returns:
-            Tuple[np.ndarray, Dict[str, Any]]: Initial observation and info.
-        """
-        # Run simulation
-        self._simulate()
-
-        return None, {}
 
     def _initialize_particle_beam(self) -> None:
         """
@@ -143,53 +124,19 @@ class CheetahVis():
             f"Initialized incoming particle beam with {self.num_particles} particles."
         )
 
-    def step(
-        self, action: np.ndarray
-    ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+    async def reset(self):
         """
-        Execute a step in the environment and run the simulation.
-
-        Args:
-            action (np.ndarray): Action to take.
-
-        Returns:
-            Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]: Observation, reward,
-                terminated, truncated, and info.
-        """
-        # Execute step in the underlying environment
-        terminated = False #self._get_terminated()
-        reward = 0 #self._get_reward()
-        observation = None #self._get_obs()
-        info = None #self._get_info()
-        truncated = False
-
-        # Run simulation
-        self._simulate()
-
-        #info.update({"stop_simulation": self.data["stop_simulation"]})
-
-        return observation, reward, terminated, truncated, info
-
-    async def render(self):
-        """
-        Render the environment by preparing simulation data and broadcasting it
+        Run the simulation, broadcast the updated data to all connected clients
         via WebSocket.
-        This method does not rely on the underlying environment's render method, as all
-        visualization logic is handled by this wrapper.
-
-        Note: The simulation data is already updated in step() or reset(),
-        so we don't need to call _simulate() again here.
         """
+        logger.debug("Running sim on reset...")
+        self._simulate()
         logger.debug("Broadcasting data to WebSocket clients...")
         results = await self.broadcast(self.data)
         for result in results:
             if isinstance(result, Exception):
                 logger.exception("broadcast task failed", exc_info=result)
         logger.debug("Data broadcast completed.")
-
-        # Add delay after broadcasting to allow animation to complete
-        # before sending new data
-        await asyncio.sleep(1.25)
 
     async def close(self):
         """
@@ -405,7 +352,7 @@ class CheetahVis():
         """Safely broadcast a message to all connected clients."""
         if message is None:
             logger.warning("No data to broadcast.")
-            return
+            return []
 
         tasks = []
         async with self._lock:
@@ -413,7 +360,7 @@ class CheetahVis():
             if not self.clients:
                 logger.debug("No clients connected, skipping broadcast.")
                 self.connected = False
-                return
+                return []
             tasks = [self.safe_send(client, message) for client in self.clients]
         return await asyncio.gather(*tasks, return_exceptions=True)
 

@@ -124,12 +124,12 @@ class SceneManager {
 
         // Renderer setup
         const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(width, height);
+        renderer.setSize(width, height, false);
         container.appendChild(renderer.domElement);
 
-        this.graphCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 1 );
-
-        document.getElementById("main").appendChild(win);
+        this.graphCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 2 );
+        this.graphCamera.aspect = width / height;
+        this.graphCamera.updateProjectionMatrix();
         return renderer;
     }
 
@@ -531,10 +531,10 @@ class SceneManager {
                     float yrange = dot(position * uMomRange, vec3(1.0));
                     float xMeanPos = dot(position * currentMeanPos, vec3(1.0));
                     
-                    float offset = dot(position, vec3(0.1, 0.4, 0.7));
+                    float offset = dot(position, vec3(-0.75, 0.0, 0.75));
 
                     // map to containing object space, with a little margin for axes etc
-                    float x = offset+(((xval - xMeanPos) / xrange) * 0.2);
+                    float x = offset+(((xval - xMeanPos) / xrange) * 0.5);
                     float y = 0.1+((yval / yrange) * 0.8);
 
                     // Simple Red-Blue gradient for momentum magnitude
@@ -560,9 +560,7 @@ class SceneManager {
         });
 
         this.graphs = new THREE.Points(geo, this.graphMaterial);
-        this.graphs.position.set(0., 0., 0.);
         this.graphs.frustumCulled = false;
-        // this.graphScene.add(this.graphCamera)
         this.graphScene.add(this.graphs);
     }
 
