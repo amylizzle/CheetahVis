@@ -168,7 +168,6 @@ class CheetahVis():
         origin = np.array([0, 0, 0, 1])
         pathlength = 0
         input_transform = trimesh.transformations.identity_matrix()
-        rotate_transform = trimesh.transformations.identity_matrix()
         self._initialize_particle_beam()
 
         # Track beam through each lattice element
@@ -178,16 +177,17 @@ class CheetahVis():
             # Track beam through this element
             # Use the output beam of the previous segment as the input
             # for the next lattice section
-            outgoing_beam = element.track(references[-1])
+            incoming_beam = references[-1]
+            outgoing_beam = element.track(incoming_beam)
             references.append(outgoing_beam)
 
             # Extract particle positions
-            x = -outgoing_beam.particles[:, 0] 
-            px = outgoing_beam.particles[:, 1]
-            y =  outgoing_beam.particles[:, 2]  
-            py = outgoing_beam.particles[:, 3]
-            z = -outgoing_beam.particles[:, 4]  
-            pz = outgoing_beam.particles[:, 5]
+            x = -incoming_beam.particles[:, 0] 
+            px = incoming_beam.particles[:, 1]
+            y =  incoming_beam.particles[:, 2]  
+            py = incoming_beam.particles[:, 3]
+            z = -incoming_beam.particles[:, 4]  
+            pz = incoming_beam.particles[:, 5]
             w = torch.zeros_like(z)
 
             # Note: In Cheetah, the coordinates of the particles are defined
@@ -210,21 +210,14 @@ class CheetahVis():
             # https://cheetah-accelerator.readthedocs.io/en/latest/coordinate_system.html
 
             # Shift beam particles 3D position in reference to segment component
-            R = element_output_transform.copy()
+            R = input_transform.copy()
             R[:3, 3] = 0
-            rotate_transform = rotate_transform @ R
-
             positions = torch.stack([x, y, z, w], dim=1) 
             momenta = torch.stack([px, py, pz, w], dim=1)
 
-            correction = (origin @ input_transform.T)
-            positions = positions @ rotate_transform.T + correction
-            momenta = momenta @ rotate_transform.T
-
-            test = input_transform @ element_output_transform
-            test[:3, 3] = 0
-            if(not np.allclose(rotate_transform, test)):
-                print(f"FALSE! {test} != {rotate_transform}")
+            correction = origin @ input_transform.T
+            positions = positions @ R.T + correction
+            momenta = momenta @ R.T
 
             # Convert to float32 (4 bytes) and get raw bytes
             # then encode to base64 string
