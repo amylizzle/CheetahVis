@@ -446,8 +446,7 @@ class SceneManager {
 
                 //momentum colouring
                 float mag = length(currentMom);
-                vColor = mix(vec3(1.0, clamp(position.z, 0.0, 1.0), 0.0), vec3(0.0, clamp(position.z, 0.0, 1.0), 1.0), clamp(mag/uMaxMomentum, 0.0, 1.0));
-
+                vColor = mix(vec3(1.0, clamp(position.z, 0.0, 1.0), 0.0), vec3(0.0, clamp(position.z, 0.0, 1.0), 1.0), clamp(1.0 - mag/uMaxMomentum, 0.0, 1.0)); 
                 // 'position' here refers to the TEMPLATE line (0,0,-.5 to 0,0,.5)
                 // using the position.z to distinguish between the start and end points
                 // we draw a line centered on position with momentum dictating line length
