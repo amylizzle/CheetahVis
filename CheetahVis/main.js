@@ -556,7 +556,7 @@ class SceneManager {
 
                     // graph select by multiplying position vector (which is 0 at the elements we aren't considering)
                     // and then working on the sum
-                    float xval = dot(position * (pos - currentMeanPos), vec3(1.0));
+                    float xval = dot(position * (pos - uPosMin), vec3(1.0));
                     float yval = dot(position * (mom - uMomMin), vec3(1.0));
                     float xrange = dot(position * (uPosMax - uPosMin), vec3(1.0));
                     float yrange = dot(position * (uMomMax - uMomMin), vec3(1.0));
@@ -570,8 +570,8 @@ class SceneManager {
 
                     // Simple Red-Blue gradient for momentum magnitude
                     float mag = length(mom);
-                    // vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/yrange, 0.0, 1.0));
-                    vColor = vec3(0.3, 0.0, 0.5);
+                    vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/yrange, 0.0, 1.0));
+                    // vColor = vec3(0.3, 0.0, 0.5);
 
                     gl_Position =  vec4(x, y, 0.0, 1.0);
                     gl_PointSize = 5.0;
@@ -646,6 +646,7 @@ class SceneManager {
 
             // Update the lerp progress on the GPU
             this.particleMaterial.uniforms.uProgress.value = segmentProgress;
+            this.graphMaterial.uniforms.uProgress.value = segmentProgress;
 
             let currentSegment = this.currentData.segments[segmentIndex - 1];
             let nextSegment = this.currentData.segments[segmentIndex];
@@ -691,8 +692,16 @@ class SceneManager {
         this.graphMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
         this.graphMaterial.uniforms.uPosMin.value = currentSegment.position_range.min;
         this.graphMaterial.uniforms.uPosMax.value = currentSegment.position_range.max;
-        this.graphMaterial.uniforms.uMomMin.value = currentSegment.momenta_range.min;
-        this.graphMaterial.uniforms.uMomMax.value = currentSegment.momenta_range.max;
+        this.graphMaterial.uniforms.uMomMin.value = [
+            Math.min(currentSegment.momenta_range.min[0], nextSegment.momenta_range.min[0]),
+            Math.min(currentSegment.momenta_range.min[1], nextSegment.momenta_range.min[1]),
+            Math.min(currentSegment.momenta_range.min[2], nextSegment.momenta_range.min[2]),
+        ]
+        this.graphMaterial.uniforms.uMomMax.value = [
+            Math.max(currentSegment.momenta_range.max[0], nextSegment.momenta_range.max[0]),
+            Math.max(currentSegment.momenta_range.max[1], nextSegment.momenta_range.max[1]),
+            Math.max(currentSegment.momenta_range.max[2], nextSegment.momenta_range.max[2]),
+        ]
 
         startPosAttr.needsUpdate = true;
         targetPosAttr.needsUpdate = true;
