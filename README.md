@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/7a09645e-5a25-49cb-b8a8-8bc9e44e734b
 
 
 
-- Python 3.10+
+- Python 3.11+
 
 ## Install
 `pip install CheetahVis@git+https://github.com/amylizzle/CheetahVis.git`
@@ -33,7 +33,6 @@ Pass the factory function and your lattice json to the `CheetahGym` constructor 
 import CheetahVis
 
 vis = CheetahVis.CheetahVis("my_cheetah_lattice.json", beam_factory)
-vis.reset()
 
 # Create the background web and websocket servers
 asyncio.run(vis.start_server())
