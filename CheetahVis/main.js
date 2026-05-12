@@ -124,10 +124,10 @@ class SceneManager {
 
         // Renderer setup
         const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(width, height, false);
+        renderer.setSize(width, height);
         container.appendChild(renderer.domElement);
 
-        this.graphCamera = new THREE.OrthographicCamera( -1, 1, 1, -1, 0, 2 );
+        this.graphCamera = new THREE.OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, -10, 10);
         this.graphCamera.aspect = width / height;
         this.graphCamera.updateProjectionMatrix();
         return renderer;
@@ -420,6 +420,24 @@ class SceneManager {
                 uMaxMomentum: { value: 1.0 },
                 startMeanPosition: { value: [0.0, 0.0, 0.0] },
                 targetMeanPosition: { value: [0.0, 0.0, 0.0] },
+                startInputTransform: {
+                    value: [
+                        [1., 0., 0., 0.],
+                        [0., 1., 0., 0.]
+                        [0., 0., 1., 0.]
+                        [0., 0., 0., 1.]
+                    ]
+                },
+                targetInputTransform: {
+                    value: [
+                        [1., 0., 0., 0.],
+                        [0., 1., 0., 0.]
+                        [0., 0., 1., 0.]
+                        [0., 0., 0., 1.]
+                    ]
+                },
+                startPositionCorrection: { value: [0., 0., 0.] },
+                targetPositionCorrection: { value: [0., 0., 0.] }
             },
             vertexShader: `
             attribute vec3 startPosition;
@@ -434,19 +452,29 @@ class SceneManager {
             uniform float uMaxMomentum;
             uniform vec3 startMeanPosition; 
             uniform vec3 targetMeanPosition;
+            uniform mat4 startInputTransform;
+            uniform mat4 targetInputTransform;
+            uniform vec3 startPositionCorrection;
+            uniform vec3 targetPositionCorrection;
             
             void main() {
+                //Apply transforms
+                // # positions = positions @ R.T + correction
+                // # momenta = momenta @ R.T
+                mat3 startRotationMatrix = mat3(startInputTransform);
+                mat3 targetRotationMatrix = mat3(targetInputTransform);
+
                 //Interpolate position
-                vec3 currentPos = mix(startPosition, targetPosition, uProgress);
-                vec3 currentMeanPos = mix(startMeanPosition, targetMeanPosition, uProgress);
+                vec3 currentPos = mix(startRotationMatrix * startPosition + startPositionCorrection, targetRotationMatrix * targetPosition + targetPositionCorrection, uProgress);
+                vec3 currentMeanPos = mix(startRotationMatrix * startMeanPosition + startPositionCorrection, targetRotationMatrix * targetMeanPosition + targetPositionCorrection, uProgress);
                 currentPos = ((currentPos - currentMeanPos) * vec3(uScaleSpread)) + currentMeanPos;
 
                 //assuming a linear interp of momentum here, which is not correct at all
-                vec3 currentMom = mix(startMomenta, targetMomenta, uProgress); 
+                vec3 currentMom = mix(startRotationMatrix * startMomenta, targetRotationMatrix * targetMomenta, uProgress); 
 
                 //momentum colouring
                 float mag = length(currentMom);
-                vColor = mix(vec3(1.0, clamp(position.z, 0.0, 1.0), 0.0), vec3(0.0, clamp(position.z, 0.0, 1.0), 1.0), clamp(1.0 - mag/uMaxMomentum, 0.0, 1.0)); 
+                vColor = mix(vec3(1.0, clamp(position.z, 0.0, 1.0), 0.0), vec3(0.0, clamp(position.z, 0.0, 1.0), 1.0), clamp(mag/uMaxMomentum, 0.0, 1.0)); 
                 // 'position' here refers to the TEMPLATE line (0,0,-.5 to 0,0,.5)
                 // using the position.z to distinguish between the start and end points
                 // we draw a line centered on position with momentum dictating line length
@@ -499,8 +527,10 @@ class SceneManager {
         this.graphMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 uProgress: { value: 0 },
-                uPosRange: { value: [.1, .1, .1] }, // Max meters
-                uMomRange: { value: [.1, .1, .1] }, // Max momentum units
+                uPosMax: { value: [1.0, 1.0, 1.0] }, // Max meters
+                uMomMax: { value: [1.0, 1.0, 1.0] }, // Max momentum units
+                uPosMin: { value: [-1.0, -1.0, -1.0] }, // Min meters
+                uMomMin: { value: [-1.0, -1.0, -1.0] }, // Min momentum units
                 startMeanPosition: { value: [0.0, 0.0, 0.0] },
                 targetMeanPosition: { value: [0.0, 0.0, 0.0] },
             },
@@ -512,8 +542,10 @@ class SceneManager {
                 
                 varying vec3 vColor;
                 uniform float uProgress;
-                uniform vec3 uPosRange;
-                uniform vec3 uMomRange;
+                uniform vec3 uPosMin;
+                uniform vec3 uPosMax;
+                uniform vec3 uMomMin;
+                uniform vec3 uMomMax;
                 uniform vec3 startMeanPosition; 
                 uniform vec3 targetMeanPosition;
 
@@ -524,23 +556,24 @@ class SceneManager {
 
                     // graph select by multiplying position vector (which is 0 at the elements we aren't considering)
                     // and then working on the sum
-                    float xval = dot(position * pos, vec3(1.0));
-                    float yval = dot(position * mom, vec3(1.0));
-                    float xrange = dot(position * uPosRange, vec3(1.0));
-                    float yrange = dot(position * uMomRange, vec3(1.0));
+                    float xval = dot(position * (pos - currentMeanPos), vec3(1.0));
+                    float yval = dot(position * (mom - uMomMin), vec3(1.0));
+                    float xrange = dot(position * (uPosMax - uPosMin), vec3(1.0));
+                    float yrange = dot(position * (uMomMax - uMomMin), vec3(1.0));
                     float xMeanPos = dot(position * currentMeanPos, vec3(1.0));
-                    
+
                     float offset = dot(position, vec3(-0.75, 0.0, 0.75));
 
                     // map to containing object space, with a little margin for axes etc
-                    float x = offset+(((xval - xMeanPos) / xrange) * 0.5);
-                    float y = 0.1+((yval / yrange) * 0.8);
+                    float x = offset+((xval / xrange) * 0.5);
+                    float y = -1.0 + ((yval / yrange) * 2.0);
 
                     // Simple Red-Blue gradient for momentum magnitude
                     float mag = length(mom);
-                    vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/yrange, 0.0, 1.0));
+                    // vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/yrange, 0.0, 1.0));
+                    vColor = vec3(0.3, 0.0, 0.5);
 
-                    gl_Position =  vec4(x, y, -0.01, 1.0);
+                    gl_Position =  vec4(x, y, 0.0, 1.0);
                     gl_PointSize = 5.0;
                 }
             `,
@@ -548,7 +581,7 @@ class SceneManager {
                 varying vec3 vColor;
                 void main() {
                     if (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;
-                    gl_FragColor = vec4(vColor, 0.8);
+                    gl_FragColor = vec4(vColor, 0.3);
                 }
             `,
             transparent: true,
@@ -649,11 +682,17 @@ class SceneManager {
         this.particleMaterial.uniforms.uMaxMomentum.value = Math.max(currentSegment.getParticleMomentaArray().reduce((a, b) => Math.max(a, b), -Infinity), nextSegment.getParticleMomentaArray().reduce((a, b) => Math.max(a, b), -Infinity));
         this.particleMaterial.uniforms.startMeanPosition.value = currentSegment.mean_particle_position;
         this.particleMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
+        this.particleMaterial.uniforms.startPositionCorrection.value = currentSegment.mesh_position;
+        this.particleMaterial.uniforms.targetPositionCorrection.value = nextSegment.mesh_position;
+        this.particleMaterial.uniforms.startInputTransform.value = currentSegment.element_transform;
+        this.particleMaterial.uniforms.targetInputTransform.value = nextSegment.element_transform;
 
         this.graphMaterial.uniforms.startMeanPosition.value = currentSegment.mean_particle_position;
         this.graphMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
-        this.graphMaterial.uniforms.uPosRange.value = currentSegment.position_range;
-        this.graphMaterial.uniforms.uMomRange.value = currentSegment.momenta_range;
+        this.graphMaterial.uniforms.uPosMin.value = currentSegment.position_range.min;
+        this.graphMaterial.uniforms.uPosMax.value = currentSegment.position_range.max;
+        this.graphMaterial.uniforms.uMomMin.value = currentSegment.momenta_range.min;
+        this.graphMaterial.uniforms.uMomMax.value = currentSegment.momenta_range.max;
 
         startPosAttr.needsUpdate = true;
         targetPosAttr.needsUpdate = true;
@@ -678,7 +717,16 @@ class SceneManager {
     }
 
     getXYZRange(floatArray) {
-        const initial = {
+        const bounds = this.getXYZMinMax(floatArray)
+        return [
+            bounds.max[0] - bounds.min[0],
+            bounds.max[1] - bounds.min[1],
+            bounds.max[2] - bounds.min[2],
+        ]
+    }
+
+    getXYZMinMax(floatArray) {
+                const initial = {
             min: [Infinity, Infinity, Infinity],
             max: [-Infinity, -Infinity, -Infinity]
         };
@@ -691,11 +739,7 @@ class SceneManager {
 
             return acc;
         }, initial);
-        return [
-            bounds.max[0] - bounds.min[0],
-            bounds.max[1] - bounds.min[1],
-            bounds.max[2] - bounds.min[2],
-        ]
+        return bounds;
     }
 
     // Find which segment we're in based on distance traveled
@@ -834,7 +878,6 @@ class SceneManager {
                 ]),
             });
 
-            // This is vastly faster than parsing a million string numbers
             const blobmom = atob(seg.particle_momenta);
             const bufmom = new Uint8Array(blobmom.length);
             for (let i = 0; i < blobmom.length; i++) bufmom[i] = blobmom.charCodeAt(i);
@@ -849,15 +892,15 @@ class SceneManager {
                 ]),
             });
 
-            seg.position_range = this.getXYZRange(floatArrayPosition);
-            seg.momenta_range = this.getXYZRange(floatArrayMomenta);
+            seg.position_range = this.getXYZMinMax(floatArrayPosition);
+            seg.momenta_range = this.getXYZMinMax(floatArrayMomenta);
 
             if (!seg.mean_particle_position.every(v => Number.isFinite(v))) {
                 console.error('Invalid mean_particle_position:', seg);
                 return;
             }
             if (!seg.mesh_position.every(v => Number.isFinite(v))) {
-                console.error('Invalid mean_particle_position:', seg);
+                console.error('Invalid mesh_position:', seg);
                 return;
             }
         });
