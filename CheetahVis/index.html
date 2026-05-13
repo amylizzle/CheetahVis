@@ -11,13 +11,37 @@
   <main id="main">
     <div id="container3D"></div>
     <div id="window-container"
-      style="position: absolute; width: 610px; height: 230px; border: 1px solid #444; background: #000;">
+      style="position: absolute; width: 600px; height: 230px; border: 1px solid #444; background: #000;">
       <div id="window-header"
         style="height: 30px; background: #222; cursor: move; display: flex; align-items: center; padding-left: 10px; color: white;">
         Phase Space Graphs
       </div>
-      <div id="graph-canvas-container" style="width: 100%; height: calc(100% - 30px);">
+      <div id="graph-canvas-container" style="width: 100%; height: 200px; position: relative;">
+        <div id="xpxlabel" class="xpxgraph">x/px</div>
+        <div id="xpxxaxis" class="xaxis xpxgraph"></div>
+        <div id="xpxyaxis" class="yaxis xpxgraph"></div>
+        <div id="minxlabel" class="xpxgraph">0.00e-0</div>
+        <div id="maxpxlabel" class="xpxgraph">0.00e-0</div>
+        <div id="minpxlabel" class="xpxgraph">0.00e-0</div>
+        <div id="maxxlabel" class="xpxgraph">0.00e-0</div>
+        
+        <div id="ypylabel" class="ypygraph">y/py</div>
+        <div id="ypyxaxis" class="xaxis ypygraph"></div>
+        <div id="ypyyaxis" class="yaxis ypygraph"></div>        
+        <div id="minylabel" class="ypygraph">0.00e-0</div>
+        <div id="maxpylabel" class="ypygraph">0.00e-0</div>
+        <div id="minpylabel" class="ypygraph">0.00e-0</div>
+        <div id="maxylabel" class="ypygraph">0.00e-0</div>        
+
+        <div id="zpzlabel" class="zpzgraph">z/pz</div>
+        <div id="zpzxaxis" class="xaxis zpzgraph"></div>
+        <div id="zpzyaxis" class="yaxis zpzgraph"></div>        
+        <div id="minzlabel" class="zpzgraph">0.00e-0</div>
+        <div id="maxpzlabel" class="zpzgraph">0.00e-0</div>
+        <div id="minpzlabel" class="zpzgraph">0.00e-0</div>
+        <div id="maxzlabel" class="zpzgraph">0.00e-0</div>        
       </div>
+
     </div>
   </main>
   <script type="module" src="main.js"></script>

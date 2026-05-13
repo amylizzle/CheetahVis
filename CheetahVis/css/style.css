@@ -27,38 +27,53 @@ header h1 {
 
 .text-box {
   /* Basic styling */
-  position: absolute; /* Make it absolute for positioning */
+  position: absolute;
+  /* Make it absolute for positioning */
   --text-box-vertical-margin: 10px;
-  top: var(--text-box-vertical-margin); /* Adjust top position as needed */
-  right: var(--text-box-vertical-margin); /* Position 10px from the right edge */  --text-box-vertical-padding: 10px;
-  padding: var(--text-box-vertical-padding) 15px; /* Padding for content and border */
+  top: var(--text-box-vertical-margin);
+  /* Adjust top position as needed */
+  right: var(--text-box-vertical-margin);
+  /* Position 10px from the right edge */
+  --text-box-vertical-padding: 10px;
+  padding: var(--text-box-vertical-padding) 15px;
+  /* Padding for content and border */
   max-height: calc(100vh - 2 * var(--text-box-vertical-padding) - 2 * var(--text-box-vertical-margin));
   min-width: 400px;
-  width: 20%; /* Set width to 20% */
+  width: 20%;
+  /* Set width to 20% */
 
-  border: 1px solid #ccc; /* Border color and thickness */
-  border-radius: 4px; /* Rounded corners */
-  font-size: 16px; /* Font size for text */
-  background-color: #fff; /* Background color */
-  color: #333; /* Text color */
+  border: 1px solid #ccc;
+  /* Border color and thickness */
+  border-radius: 4px;
+  /* Rounded corners */
+  font-size: 16px;
+  /* Font size for text */
+  background-color: #fff;
+  /* Background color */
+  color: #333;
+  /* Text color */
   overflow-y: auto;
   opacity: 0.8;
 
   /* Optional: Focus styling */
   &:focus {
-    outline: none; /* Remove default browser outline */
-    border-color: #999; /* Change border color on focus */
+    outline: none;
+    /* Remove default browser outline */
+    border-color: #999;
+    /* Change border color on focus */
   }
 
   /* Optional: Placeholder styling */
   &::placeholder {
-    color: #aaa; /* Placeholder text color */
+    color: #aaa;
+    /* Placeholder text color */
   }
 }
 
 @media (max-width: 768px) {
   .text-box {
-    position: fixed;  /* Fix the textbox to viewport on mobile */
+    position: fixed;
+    /* Fix the textbox to viewport on mobile */
     width: 96%;
     height: 50%;
     top: 45%;
@@ -72,29 +87,117 @@ header h1 {
   position: absolute;
   top: 5px;
   right: 5px;
-  background-color: transparent; /* Make background invisible */
-  border: none; /* Remove border */
-  cursor: pointer; /* Change cursor to indicate clickability */
+  background-color: transparent;
+  /* Make background invisible */
+  border: none;
+  /* Remove border */
+  cursor: pointer;
+  /* Change cursor to indicate clickability */
 }
 
-.image {
-  width: 390px;
-  object-fit: cover;
-  height: 200px;
-  display: block;
-  margin: 0 auto; /* Center the image */
+
+
+.xaxis {
+  width: 20%;
+  height: 2px;
+  border-bottom: 1px solid rgb(255, 255, 255);
+  position: absolute;
+  bottom: 10%;
+  white-space: nowrap;
 }
 
-#toggle-model {
-	position: fixed;
-	bottom: 10px;
-	left: 10px;
-	z-index: 1;
+.yaxis {
+  width: 2px;
+  top: 10%;
+  border-left: 1px solid rgb(255, 255, 255);
+  position: absolute;
+  bottom: 10%;
+  white-space: nowrap;
 }
 
-#toggle-invis {
-  position: fixed;
-  bottom: 100px;
-  left: 10px;
-  z-index: 1;
+.xpxgraph {
+  position: absolute;
+  color: white;
+  font-size: 12px;
+  left: 10%;
+  white-space: nowrap;
 }
+.ypygraph {
+  position: absolute;
+  color: white;
+  font-size: 12px;
+  left: 40%;
+  white-space: nowrap;
+}
+.zpzgraph {
+  position: absolute;
+  color: white;
+  font-size: 12px;
+  left: 70%;
+  white-space: nowrap;
+}
+
+#minxlabel {
+  left: 6%;
+  bottom: 2%;
+  white-space: nowrap;
+}
+#maxxlabel {
+  left: 27%;
+  bottom: 2%;
+  white-space: nowrap;
+}
+#minpxlabel {
+  left: 1%;
+  bottom: 10%;
+  white-space: nowrap;
+}
+#maxpxlabel {
+  left: 1%;
+  top: 10%;
+  white-space: nowrap;
+}
+
+#minylabel {
+  left: 36%;
+  bottom: 2%;
+  white-space: nowrap;
+}
+#maxylabel {
+  left: 57%;
+  bottom: 2%;
+  white-space: nowrap;
+}
+#minpylabel {
+  left: 31%;
+  bottom: 10%;
+  white-space: nowrap;
+}
+#maxpylabel {
+  left: 31%;
+  top: 10%;
+  white-space: nowrap;
+}
+
+#minzlabel {
+  left: 66%;
+  bottom: 2%;
+  white-space: nowrap;
+}
+#maxzlabel {
+  left: 87%;
+  bottom: 2%;
+  white-space: nowrap;
+}
+#minpzlabel {
+  left: 61%;
+  bottom: 10%;
+  white-space: nowrap;
+}
+#maxpzlabel {
+  left: 61%;
+  top: 10%;
+  white-space: nowrap;
+}
+
+

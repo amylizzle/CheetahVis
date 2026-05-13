@@ -122,12 +122,27 @@ class SceneManager {
         const width = container.clientWidth;
         const height = container.clientHeight;
 
+        this.maxxlabel = document.getElementById("maxxlabel");
+        this.maxpxlabel = document.getElementById("maxpxlabel");
+        this.minxlabel = document.getElementById("minxlabel");
+        this.minpxlabel = document.getElementById("minpxlabel");
+
+        this.maxylabel = document.getElementById("maxylabel");
+        this.maxpylabel = document.getElementById("maxpylabel");
+        this.minylabel = document.getElementById("minylabel");
+        this.minpylabel = document.getElementById("minpylabel");
+
+        this.maxzlabel = document.getElementById("maxzlabel");
+        this.maxpzlabel = document.getElementById("maxpzlabel");
+        this.minzlabel = document.getElementById("minzlabel");
+        this.minpzlabel = document.getElementById("minpzlabel");
+
         // Renderer setup
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(width, height);
         container.appendChild(renderer.domElement);
 
-        this.graphCamera = new THREE.OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, -10, 10);
+        this.graphCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
         this.graphCamera.aspect = width / height;
         this.graphCamera.updateProjectionMatrix();
         return renderer;
@@ -556,24 +571,24 @@ class SceneManager {
 
                     // graph select by multiplying position vector (which is 0 at the elements we aren't considering)
                     // and then working on the sum
-                    float xval = dot(position * (pos - uPosMin), vec3(1.0));
+                    float xval = dot(position * (pos - currentMeanPos), vec3(1.0));
                     float yval = dot(position * (mom - uMomMin), vec3(1.0));
                     float xrange = dot(position * (uPosMax - uPosMin), vec3(1.0));
                     float yrange = dot(position * (uMomMax - uMomMin), vec3(1.0));
                     float xMeanPos = dot(position * currentMeanPos, vec3(1.0));
 
-                    float offset = dot(position, vec3(-0.75, 0.0, 0.75));
+                    float offset = dot(position, vec3(-0.6, 0.0, 0.6));
 
                     // map to containing object space, with a little margin for axes etc
-                    float x = offset+((xval / xrange) * 0.5);
-                    float y = -1.0 + ((yval / yrange) * 2.0);
+                    float x = offset+((xval / xrange) * 0.4);
+                    float y = -0.8 + ((yval / yrange) * 1.6);
 
                     // Simple Red-Blue gradient for momentum magnitude
                     float mag = length(mom);
                     vColor = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), clamp(mag/yrange, 0.0, 1.0));
                     // vColor = vec3(0.3, 0.0, 0.5);
 
-                    gl_Position =  vec4(x, y, 0.0, 1.0);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(x, y, 0.0, 1.0);
                     gl_PointSize = 5.0;
                 }
             `,
@@ -690,8 +705,17 @@ class SceneManager {
 
         this.graphMaterial.uniforms.startMeanPosition.value = currentSegment.mean_particle_position;
         this.graphMaterial.uniforms.targetMeanPosition.value = nextSegment.mean_particle_position;
-        this.graphMaterial.uniforms.uPosMin.value = currentSegment.position_range.min;
-        this.graphMaterial.uniforms.uPosMax.value = currentSegment.position_range.max;
+        this.graphMaterial.uniforms.uPosMin.value = [
+            Math.min(currentSegment.position_range.min[0], nextSegment.position_range.min[0]),
+            Math.min(currentSegment.position_range.min[1], nextSegment.position_range.min[1]),
+            Math.min(currentSegment.position_range.min[2], nextSegment.position_range.min[2]),
+        ]
+        this.graphMaterial.uniforms.uPosMax.value = [
+            Math.max(currentSegment.position_range.max[0], nextSegment.position_range.max[0]),
+            Math.max(currentSegment.position_range.max[1], nextSegment.position_range.max[1]),
+            Math.max(currentSegment.position_range.max[2], nextSegment.position_range.max[2]),
+        ]
+
         this.graphMaterial.uniforms.uMomMin.value = [
             Math.min(currentSegment.momenta_range.min[0], nextSegment.momenta_range.min[0]),
             Math.min(currentSegment.momenta_range.min[1], nextSegment.momenta_range.min[1]),
@@ -702,6 +726,21 @@ class SceneManager {
             Math.max(currentSegment.momenta_range.max[1], nextSegment.momenta_range.max[1]),
             Math.max(currentSegment.momenta_range.max[2], nextSegment.momenta_range.max[2]),
         ]
+
+        this.maxxlabel.innerHTML = `${this.graphMaterial.uniforms.uPosMax.value[0].toExponential(2)}`;
+        this.maxpxlabel.innerHTML = `${this.graphMaterial.uniforms.uMomMax.value[0].toExponential(2)}`;
+        this.minxlabel.innerHTML = `${this.graphMaterial.uniforms.uPosMin.value[0].toExponential(2)}`;
+        this.minpxlabel.innerHTML = `${this.graphMaterial.uniforms.uMomMin.value[0].toExponential(2)}`;
+
+        this.maxylabel.innerHTML = `${this.graphMaterial.uniforms.uPosMax.value[1].toExponential(2)}`;
+        this.maxpylabel.innerHTML = `${this.graphMaterial.uniforms.uMomMax.value[1].toExponential(2)}`;
+        this.minylabel.innerHTML = `${this.graphMaterial.uniforms.uPosMin.value[1].toExponential(2)}`;
+        this.minpylabel.innerHTML = `${this.graphMaterial.uniforms.uMomMin.value[1].toExponential(2)}`;
+
+        this.maxzlabel.innerHTML = `${this.graphMaterial.uniforms.uPosMax.value[2].toExponential(2)}`;
+        this.maxpzlabel.innerHTML = `${this.graphMaterial.uniforms.uMomMax.value[2].toExponential(2)}`;
+        this.minzlabel.innerHTML = `${this.graphMaterial.uniforms.uPosMin.value[2].toExponential(2)}`;
+        this.minpzlabel.innerHTML = `${this.graphMaterial.uniforms.uMomMin.value[2].toExponential(2)}`;
 
         startPosAttr.needsUpdate = true;
         targetPosAttr.needsUpdate = true;
