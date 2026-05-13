@@ -1,15 +1,16 @@
 # Cheetah 3D Visualization
 
-This repository contains a Python-based simulation control system and a JavaScript-based 3D visualization application for a particle beam lattice. Follow the instructions below to set up the environment and dependencies.
+This repository contains a Python-based Cheetah simulation control system and a JavaScript-based 3D visualization application for a particle beam lattice. 
 
+Particles are rendered (using shaders) as a line whose magnitude and direction corresponds to the momentum of that particle. White-tip indicates the orientation of the momentum. Colour indicates relative magnitude of the momentum where red equals the reference momentum and blue equals the largest momentum difference from the reference.
+
+<img width="1728" height="887" alt="image" src="https://github.com/user-attachments/assets/6b18522f-514b-4e52-80be-9534c9102563" />
 
 
 [bunchcompressor.webm](https://github.com/user-attachments/assets/5d674290-51d3-4715-822e-e6a6657cf4b4)
 
 
 ## Prerequisites
-
-
 
 - Python 3.11+
 
@@ -19,6 +20,8 @@ This repository contains a Python-based simulation control system and a JavaScri
 ## Running
 Define a beam factory function that returns a new instance of a `cheetah.ParticleBeam`
 ```
+import cheetah
+
 def beam_factory(num_particles:int) -> cheetah.ParticleBeam:
     return cheetah.ParticleBeam.from_twiss(
             num_particles=num_particles,
@@ -30,6 +33,7 @@ Pass the factory function and your lattice json to the `CheetahGym` constructor 
 
 ```
 import CheetahVis
+import asyncio
 
 vis = CheetahVis.CheetahVis("my_cheetah_lattice.json", beam_factory)
 
