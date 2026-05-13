@@ -4,8 +4,7 @@ This repository contains a Python-based simulation control system and a JavaScri
 
 
 
-https://github.com/user-attachments/assets/7a09645e-5a25-49cb-b8a8-8bc9e44e734b
-
+[bunchcompressor.webm](https://github.com/user-attachments/assets/5d674290-51d3-4715-822e-e6a6657cf4b4)
 
 
 ## Prerequisites
